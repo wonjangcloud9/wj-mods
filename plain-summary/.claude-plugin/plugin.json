@@ -1,0 +1,8 @@
+{
+  "name": "plain-summary",
+  "version": "0.1.0",
+  "description": "보고서처럼 긴 답변 아래에 작은 모델이 쓴 두 줄 쉬운 요약을 붙인다",
+  "author": {
+    "name": "wonjangcloud9"
+  }
+}

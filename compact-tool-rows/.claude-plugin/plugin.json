@@ -1,0 +1,8 @@
+{
+  "name": "compact-tool-rows",
+  "version": "0.1.0",
+  "description": "Bash 실행 줄의 긴 명령을 첫 줄 앞부분만 보이게 줄인다",
+  "author": {
+    "name": "wonjangcloud9"
+  }
+}

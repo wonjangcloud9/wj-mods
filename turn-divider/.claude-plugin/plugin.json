@@ -1,0 +1,8 @@
+{
+  "name": "turn-divider",
+  "version": "0.1.0",
+  "description": "내가 보낸 질문 위에 흐린 구분선을 긋고 왼쪽에 색 막대를 세워 질문과 답의 경계를 보이게 한다",
+  "author": {
+    "name": "wonjangcloud9"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "usage-band",
+  "version": "0.1.0",
+  "description": "입력창 위 오른쪽에 5시간·주간 사용량과 Claude status 를 한 줄로 보여 준다",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "wonjangcloud9"
+  }
+}
