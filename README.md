@@ -9,6 +9,7 @@ The UI text, notifications and summaries are written in Korean.
 | Mod | What it does |
 |---|---|
 | `work-progress` | Collects multi-step work from every open session into a line above the prompt and a `/progress` pane. Each task's steps are drawn as a chain of nodes that opens into a vertical flow. It also keeps follow-ups left after a task is done, what a paused task is waiting for, and subagent records that ended without being closed. `/progress 요약` writes a summary of the last 24 hours. |
+| `plain-korean` | A Korean readability bundle. An output style for short, plain Korean answers (conclusion first, no made-up abbreviations, nothing referred to by number alone), a guard that flags answers that slip into English and corrects the next one, a nudge to re-explain when you type "뭔 말" or "짧게", and the `claude-warm` theme. Installing it also installs `plain-summary`, `turn-divider` and `compact-tool-rows`. |
 | `usage-band` | Shows 5-hour and weekly usage and the Claude status page state in one line above the prompt. |
 | `long-turn-notify` | Sends a macOS notification and plays a voice line when a turn ran longer than 2 minutes, or when a question or permission prompt is waiting. macOS only. |
 | `session-nickname` | Gives each new session a random name so other sessions can address it with SendMessage. |
@@ -61,7 +62,15 @@ claude plugin install work-progress@wj-mods
 
 Install other mods the same way with `<mod>@wj-mods`. They load in sessions started after installing.
 
-From a local clone, list the mod folders in `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `:`:
+The Korean readability bundle installs `plain-summary`, `turn-divider` and `compact-tool-rows` with it:
+
+```sh
+claude plugin install plain-korean@wj-mods
+```
+
+The output style and the theme are not switched on for you. Choose `plain-korean` as the output style in `/config`, and `claude-warm` in `/theme` if you want the colors too.
+
+From a local clone, list the mod folders in `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`, separated by `:`. Folders listed this way do not pull in dependencies, so list the bundle's three mods as well:
 
 ```sh
 git clone https://github.com/wonjangcloud9/wj-mods.git ~/wj-mods

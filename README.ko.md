@@ -7,6 +7,7 @@ Claude Code 화면과 알림을 바꾸는 mod 모음이에요. 필요한 것만 
 | mod | 하는 일 |
 |---|---|
 | `work-progress` | 여러 세션의 업무 진행도를 입력창 위 한 줄과 `/progress` 패널로 모아 보여 줘요. 단계를 노드로 이어 그리고, 누르면 세로 흐름으로 펼쳐져요. 완료 뒤 남은 일, 보류한 업무가 기다리는 것, 닫히지 않고 끝난 서브에이전트 기록도 챙겨요. `/progress 요약` 은 최근 24시간 업무를 글로 정리해요. |
+| `plain-korean` | 한국어 가독성 묶음이에요. 결론부터, 지어낸 줄임말과 번호만 부르기 없이 짧게 답하는 답변 스타일, 답변이 영어로 새면 경고하고 다음 답을 바로잡는 규칙, "뭔 말"·"짧게"라고 하면 쉽게 다시 설명하게 하는 규칙, `claude-warm` 테마가 들어 있어요. 설치하면 `plain-summary`, `turn-divider`, `compact-tool-rows` 도 함께 깔려요. |
 | `usage-band` | 입력창 위 오른쪽에 5시간·주간 사용량과 Claude status 를 한 줄로 보여 줘요. |
 | `long-turn-notify` | 2분 넘게 걸린 작업이 끝나거나 선택 창·권한 확인 창이 뜨면 맥 알림과 음성으로 알려 줘요. macOS 전용이에요. |
 | `session-nickname` | 새 세션에 랜덤 이름을 붙여 `@이름` 으로 SendMessage 할 수 있게 해요. |
@@ -25,6 +26,14 @@ claude plugin install work-progress@wj-mods
 
 다른 mod 도 `<mod 이름>@wj-mods` 로 설치해요. 설치한 뒤 새로 여는 세션부터 적용돼요.
 
+한국어 가독성 묶음은 `plain-summary`, `turn-divider`, `compact-tool-rows` 까지 한 번에 설치해요.
+
+```sh
+claude plugin install plain-korean@wj-mods
+```
+
+답변 스타일과 테마는 저절로 바뀌지 않아요. `/config` 의 출력 스타일에서 `plain-korean` 을 고르고, 색도 바꾸고 싶으면 `/theme` 에서 `claude-warm` 을 골라요.
+
 업데이트는 아래처럼 해요.
 
 ```sh
@@ -34,7 +43,7 @@ claude plugin update work-progress@wj-mods
 
 ### 폴더로 직접 불러오기
 
-저장소를 내려받은 뒤, 쓸 mod 폴더를 `~/.claude/settings.json` 의 `CLAUDE_CODE_PLUGIN_DIRS` 에 `:` 로 이어 적어요.
+저장소를 내려받은 뒤, 쓸 mod 폴더를 `~/.claude/settings.json` 의 `CLAUDE_CODE_PLUGIN_DIRS` 에 `:` 로 이어 적어요. 이 방식은 함께 깔리는 mod 를 챙기지 않으니, 묶음을 쓰려면 세 mod 폴더도 같이 적어요.
 
 ```sh
 git clone https://github.com/wonjangcloud9/wj-mods.git ~/wj-mods

@@ -1,0 +1,26 @@
+{
+  "name": "Claude Warm",
+  "base": "dark",
+  "overrides": {
+    "claude": "#D97757",
+    "claudeShimmer": "#EFA088",
+    "text": "#ECE7E1",
+    "inverseText": "#1F1D1B",
+    "subtle": "#9A928B",
+    "inactive": "#77706A",
+    "inactiveShimmer": "#9A928B",
+    "suggestion": "#B9AEF0",
+    "remember": "#B9AEF0",
+    "promptBorder": "#5E544E",
+    "promptBorderShimmer": "#8A7D75",
+    "success": "#8FC08B",
+    "warning": "#E8B65C",
+    "warningShimmer": "#F3CD8A",
+    "error": "#E5736B",
+    "userMessageBackground": "#2A2623",
+    "userMessageBackgroundHover": "#332E2A",
+    "selectionBg": "#4D3D34",
+    "rate_limit_fill": "#D97757",
+    "rate_limit_empty": "#48413C"
+  }
+}

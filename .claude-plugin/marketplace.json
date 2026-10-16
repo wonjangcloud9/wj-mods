@@ -18,6 +18,12 @@
       "version": "0.1.0"
     },
     {
+      "name": "plain-korean",
+      "source": "./plain-korean",
+      "description": "쉬운 한국어 답변 스타일, 영어로 새는 답변 경고, 가독성 mod 3개, claude-warm 테마를 한 번에 설치한다",
+      "version": "0.1.0"
+    },
+    {
       "name": "plain-summary",
       "source": "./plain-summary",
       "description": "보고서처럼 긴 답변 아래에 작은 모델이 쓴 두 줄 쉬운 요약을 붙인다",
