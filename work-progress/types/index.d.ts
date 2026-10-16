@@ -53,7 +53,15 @@ export type ChildRow = {
 export type Phase = 'yourTurn' | 'running' | 'stalled' | 'paused' | 'followUp' | 'done' | 'dormant'
 
 // children 은 도는 서브에이전트, finished 는 이 업무 아래 끝난 서브에이전트 기록
-export type WorkRow = { work: Work; phase: Phase; children: ChildRow[]; finished: ChildRow[]; activity?: Activity }
+// paceMs 는 이 업무와 지난 업무 기록으로 본 단계 하나에 걸리는 시간이다. 기록이 모자라면 없다.
+export type WorkRow = {
+  work: Work
+  phase: Phase
+  children: ChildRow[]
+  finished: ChildRow[]
+  activity?: Activity
+  paceMs?: number
+}
 
 export type Board = { rows: WorkRow[]; untracked: LiveSession[]; at: number }
 

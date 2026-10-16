@@ -1,6 +1,6 @@
 {
   "name": "session-nickname",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "새 세션에 재밌는 랜덤 이름을 붙여 @이름 으로 SendMessage 할 수 있게 한다",
   "types": "./types/index.d.ts",
   "author": {

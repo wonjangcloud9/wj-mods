@@ -11,6 +11,9 @@ import type {
   WorkRow,
   WorkStatus,
 } from '../types'
+import { paceOf } from './pace'
+
+export { stepSpans, stepStartedAt } from './pace'
 
 const DAY_MS = 24 * 60 * 60_000
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
@@ -218,29 +221,6 @@ function timeSteps(steps: Step[], previous: Work | null, at: number): Step[] {
   })
 }
 
-// 지금 단계를 시작한 시각. 예전 기록이라 완료 시각을 모르면 undefined 다.
-export function stepStartedAt(work: Work): number | undefined {
-  const done = work.steps.filter(step => step.isDone)
-  if (done.length === 0) return work.createdAt
-  const times = done.flatMap(step => (step.doneAt === undefined ? [] : [step.doneAt]))
-  return times.length > 0 ? Math.max(...times) : undefined
-}
-
-// 단계마다 걸린 시간. 끝낸 순서대로 앞 단계를 끝낸 시각부터 잰다. 1분이 안 되거나 모르면 undefined 다.
-export function stepSpans(work: Work): (number | undefined)[] {
-  const order = work.steps
-    .map((step, index) => ({ index, at: step.doneAt }))
-    .filter((item): item is { index: number; at: number } => item.at !== undefined)
-    .sort((a, b) => a.at - b.at)
-  const spans: (number | undefined)[] = work.steps.map(() => undefined)
-  let from = work.createdAt
-  for (const { index, at } of order) {
-    spans[index] = at - from >= 60_000 ? at - from : undefined
-    from = at
-  }
-  return spans
-}
-
 // 서브에이전트가 끝났는데 완료로 닫지 않은 기록. 부모 대화가 마무리했으면 대신 닫아야 한다.
 export function unclosedChildren(works: Work[], parentId: string, running: Set<string>): Work[] {
   return works.filter(
@@ -335,6 +315,11 @@ export function toBoard(
   const recordOf = (agentId: string) => newest(works.filter(work => work.agentId === agentId))
 
   const parents = parentsBySession(works)
+  const paceOfWork = (work: Work) => {
+    if (work.status !== 'active' && work.status !== 'paused') return {}
+    const paceMs = paceOf(work, works.filter(other => isSubWork(other) === isSubWork(work)))
+    return paceMs === undefined ? {} : { paceMs }
+  }
   // 한 세션이 업무를 여러 개 열어 두었으면 메인 대화가 가장 최근에 기록한 진행 중 업무만 그 세션의 현재 업무로 본다.
   const latest = new Map([...parents].filter(([, work]) => work.status === 'active'))
 
@@ -355,6 +340,7 @@ export function toBoard(
         children: running.map(agent => childOf(agent, recordOf(agent.id))),
         finished: finished.map(finishedOf),
         ...(activity ? { activity } : {}),
+        ...paceOfWork(work),
       }
     })
   // 서브에이전트의 기록은 부모 업무 아래에 붙는다. 부모가 없으면 그 서브에이전트가 도는 동안만 따로 보인다.
@@ -364,7 +350,14 @@ export function toBoard(
     const agent = agentsOf(work.sessionId).find(item => item.id === agentId)
     if (!agent || recordOf(agentId) !== work) return []
     return [
-      { work, phase: 'running' as const, children: [], finished: [], ...(agent.activity ? { activity: agent.activity } : {}) },
+      {
+        work,
+        phase: 'running' as const,
+        children: [],
+        finished: [],
+        ...(agent.activity ? { activity: agent.activity } : {}),
+        ...paceOfWork(work),
+      },
     ]
   })
 

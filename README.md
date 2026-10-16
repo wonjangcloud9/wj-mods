@@ -8,11 +8,11 @@ The UI text, notifications and summaries are written in Korean.
 
 | Mod | What it does |
 |---|---|
-| `work-progress` | Collects multi-step work from every open session into a line above the prompt and a `/progress` pane. Each task's steps are drawn as a chain of nodes that opens into a vertical flow. It also keeps follow-ups left after a task is done, what a paused task is waiting for, and subagent records that ended without being closed. `/progress 요약` writes a summary of the last 24 hours. |
+| `work-progress` | Collects multi-step work from every open session into a line above the prompt and a `/progress` pane. Each task's steps are drawn as a chain of nodes that opens into a vertical flow. It also keeps follow-ups left after a task is done, what a paused task is waiting for, and subagent records that ended without being closed. Each open task shows the time likely left, judged from how long its own steps and your recent tasks' steps took. `/progress 요약` writes a summary of the last 24 hours. |
 | `plain-korean` | A Korean readability bundle. An output style for short, plain Korean answers (conclusion first, no made-up abbreviations, nothing referred to by number alone), a guard that flags answers that slip into English and corrects the next one, a nudge to re-explain when you type "뭔 말" or "짧게", and the `claude-warm` theme. Installing it also installs `plain-summary`, `turn-divider` and `compact-tool-rows`. |
 | `usage-band` | Shows 5-hour and weekly usage and the Claude status page state in one line above the prompt. |
 | `long-turn-notify` | Sends a macOS notification and plays a voice line when a turn ran longer than 2 minutes, or when a question or permission prompt is waiting. macOS only. |
-| `session-nickname` | Gives each new session a random name so other sessions can address it with SendMessage. |
+| `session-nickname` | Gives each new session a random name so other sessions can address it with SendMessage. The name reaches the session list with the first prompt. |
 | `turn-divider` | Draws a divider above each of your prompts to separate questions from answers. |
 | `plain-summary` | Adds a two-sentence plain-language summary under long, report-style answers, written by a small model. |
 | `compact-tool-rows` | Shortens long Bash commands in tool rows to the start of the first line. |
@@ -24,7 +24,7 @@ The UI text, notifications and summaries are written in Korean.
 
 ── ● 작업 중 1 ─────────────────────────────────────────────
 ▸ Theme builder spec
-  ●━●━◉─○─○─○ 2/6 · 이 단계 1시간째 · 5분 전 · @quiet-otter
+  ●━●━◉─○─○─○ 2/6 · 약 2시간 남음 · 이 단계 1시간째 · 5분 전 · @quiet-otter
   지금: Write the requirements
   최근: Bash Run the mod's tests · 방금
   └ ● Benchmark AI app builders 1/8 · 최근: WebSearch Lovable docs

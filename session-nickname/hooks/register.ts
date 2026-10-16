@@ -16,25 +16,27 @@ async function assignName($: EngineInterface): Promise<string> {
 }
 
 export const register: Register = on => {
+  // SessionStart 로 넘긴 제목은 대화 제목에만 남고 세션 목록 이름(@주소)은 폴더 이름 그대로다.
+  // 그래서 시작 때는 이름을 골라 힌트 줄에만 보여 주고, 실제로 붙이는 건 첫 프롬프트 때 한다.
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
-    // /rename 이나 resume 으로 이미 이름이 있으면 주소가 바뀌지 않게 그대로 둔다.
-    const existing = result.sessionTitle ?? e.session_title
-    if (existing) {
-      await update($, nickname, () => existing)
-      return result
-    }
-
-    const name = await assignName($)
+    const name = result.sessionTitle ?? e.session_title ?? (await assignName($))
     await update($, nickname, () => name)
-    return { ...result, sessionTitle: name }
+    return result
   })
 
   on('classic.UserPromptSubmit', async ($, e, next) => {
     const result = await next(e)
+    // /rename 이나 resume 으로 이미 이름이 있으면 주소가 바뀌지 않게 그대로 둔다.
     const title = result.sessionTitle ?? e.session_title
-    if (title) await update($, nickname, () => title)
-    return result
+    if (title) {
+      await update($, nickname, () => title)
+      return result
+    }
+
+    const name = (await read($, nickname)) || (await assignName($))
+    await update($, nickname, () => name)
+    return { ...result, sessionTitle: name }
   })
 
   // $.ui.status 는 엔진이 mod 이름을 앞에 붙여 그려서, 힌트 줄 끝에 닉네임만 붙인다.

@@ -49,12 +49,25 @@ describe('names', () => {
 })
 
 describe('session start', () => {
-  test('이름이 없는 새 세션에 랜덤 이름을 붙이고 힌트 줄 끝에 이름만 보여 준다', async ($, on) => {
+  test('새 세션은 시작 때 고른 이름을 힌트 줄에 보여 주고 첫 프롬프트 때 세션 이름으로 붙인다', async ($, on) => {
     const { tails } = world(on)
-    const result = await $.classic.SessionStart({ source: 'startup' })
-    expect(result.sessionTitle).toMatch(NAME)
+    const started = await $.classic.SessionStart({ source: 'startup' })
+    // 시작 때 넘기면 세션 목록 이름이 바뀌지 않으므로 넘기지 않는다.
+    expect(started.sessionTitle).toBeUndefined()
     await drawHint($)
-    expect(tails.at(-1)).toBe(`  @${result.sessionTitle}`)
+    const shown = tails.at(-1)?.trim().slice(1)
+    expect(shown).toMatch(NAME)
+
+    const submitted = await $.classic.UserPromptSubmit({ prompt: 'hi' })
+    expect(submitted.sessionTitle).toBe(shown)
+  })
+
+  test('이름이 붙은 뒤의 프롬프트는 이름을 다시 넘기지 않는다', async ($, on) => {
+    world(on)
+    await $.classic.SessionStart({ source: 'startup' })
+    const first = await $.classic.UserPromptSubmit({ prompt: 'hi' })
+    const second = await $.classic.UserPromptSubmit({ prompt: 'again', session_title: first.sessionTitle })
+    expect(second.sessionTitle).toBeUndefined()
   })
 
   test('이름이 정해지기 전에는 힌트 줄을 그대로 둔다', async ($, on) => {
@@ -64,9 +77,13 @@ describe('session start', () => {
   })
 
   test('연달아 연 세션은 서로 다른 이름을 받는다', async ($, on) => {
-    world(on)
+    const { tails } = world(on)
     const names = new Set<string | undefined>()
-    for (let i = 0; i < 20; i++) names.add((await $.classic.SessionStart({ source: 'startup' })).sessionTitle)
+    for (let i = 0; i < 20; i++) {
+      await $.classic.SessionStart({ source: 'startup' })
+      await drawHint($)
+      names.add(tails.at(-1))
+    }
     expect(names.size).toBe(20)
   })
 
@@ -76,6 +93,8 @@ describe('session start', () => {
     expect(result.sessionTitle).toBeUndefined()
     await drawHint($)
     expect(tails.at(-1)).toBe('  @my-work')
+    const submitted = await $.classic.UserPromptSubmit({ prompt: 'hi', session_title: 'my-work' })
+    expect(submitted.sessionTitle).toBeUndefined()
   })
 
   test('/rename 으로 바뀐 이름을 다음 프롬프트 때 힌트 줄에 반영한다', async ($, on) => {

@@ -2,6 +2,7 @@ import type { Elements, RenderSurface } from 'claude-code'
 
 import type { Board, ChildRow, Phase, Work, WorkRow } from '../types'
 import { PHASE_LABEL, PHASE_ORDER, ago, bar, countPhases, progressOf, span, stepSpans, stepStartedAt } from './model'
+import { remainingMs } from './pace'
 
 type Els = Elements[RenderSurface]
 
@@ -34,6 +35,8 @@ const INDENT = 2
 const MAX_CHILDREN = 4
 // 지금 단계가 이보다 오래 걸리면 막대 옆에 알린다.
 const SLOW_STEP_MS = 30 * 60_000
+const MINUTE_MS = 60_000
+const HOUR_MS = 60 * MINUTE_MS
 const MARK = { open: '▾', closed: '▸' }
 // 덧붙이는 정보의 글자색. dimColor 는 어두운 배경에서 거의 안 보여서, 구분선 말고는 테마의 옅은 회색을 쓴다.
 const SOFT = 'subtle'
@@ -321,6 +324,15 @@ function slowStep(row: WorkRow, now: number): string {
   return `이 단계 ${span(now - started)}째`
 }
 
+// 남은 단계와 단계 하나에 걸리는 시간으로 본 예상. 예상이라 10분이 안 되면 분, 1시간이 안 되면 5분, 그 위는 10분 단위로 끊는다.
+function etaText(row: WorkRow, now: number): string {
+  if (row.paceMs === undefined) return ''
+  const ms = remainingMs(row.work, row.paceMs, row.phase, now)
+  if (ms === undefined) return ''
+  const unit = ms < 10 * MINUTE_MS ? MINUTE_MS : ms < HOUR_MS ? 5 * MINUTE_MS : 10 * MINUTE_MS
+  return `약 ${span(Math.round(ms / unit) * unit)} 남음`
+}
+
 type RowActions = { onToggle: (id: string) => void; onArchive: (id: string) => void }
 
 // 완료·남은 일·오래 멈춤 칸의 업무는 제목 한 줄로 접는다. 남은 일과 닫히지 않은 서브 기록은 접어도 보인다.
@@ -372,10 +384,12 @@ function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, columns: 
   const { done, total } = progressOf(work)
   const title = fit(work.title, Math.max(4, columns - INDENT))
   const slow = density === 'tiny' ? '' : slowStep(row, now)
+  const eta = density === 'tiny' ? '' : etaText(row, now)
   const detail = detailOf(row)
   const where = density === 'tiny' ? ago(work.updatedAt, now) : `${ago(work.updatedAt, now)} · @${work.sessionName}`
-  // 노드 줄은 개수, 오래 걸림 알림, 시각과 세션 이름을 뺀 자리에 맞춘다.
-  const room = columns - INDENT - widthOf(` ${done}/${total}${slow ? ` · ${slow}` : ''} · ${where}`)
+  // 노드 줄은 개수, 예상 시간, 오래 걸림 알림, 시각과 세션 이름을 뺀 자리에 맞춘다.
+  const room =
+    columns - INDENT - widthOf(` ${done}/${total}${eta ? ` · ${eta}` : ''}${slow ? ` · ${slow}` : ''} · ${where}`)
 
   return (
     <Box flexDirection="column" key={`row-${work.id}`}>
@@ -388,6 +402,7 @@ function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, columns: 
         <Text wrap="truncate-end">
           {drawChain(els, work, phase, room, density)}
           <Text bold>{` ${done}/${total}`}</Text>
+          {eta ? <Text>{` · ${eta}`}</Text> : ''}
           {slow ? <Text color="warning">{` · ${slow}`}</Text> : ''}
           <Text color={SOFT}>{` · ${where}`}</Text>
         </Text>
