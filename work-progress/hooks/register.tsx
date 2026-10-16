@@ -7,16 +7,20 @@ import {
   TOOL_NAME,
   TOOL_SCHEMA,
   MAIN_LOOP,
+  closingNote,
   describeCall,
   guideText,
   liveState,
   parentsBySession,
   progressOf,
   pruneNotes,
+  runningIds,
   sameBoard,
   toBoard,
   toReport,
+  unclosedChildren,
 } from './model'
+import { SUMMARY_ARGS, dailySummary } from './summary'
 import { densityOf, drawPane, drawSummary } from './view'
 
 const board = atom({ plugin: 'work-progress', key: 'board' } as const, null)
@@ -64,6 +68,12 @@ async function sessionName($: EngineInterface, id: string): Promise<string> {
   return live?.name ?? id.slice(0, 8)
 }
 
+// 메인 대화가 업무를 기록할 때, 그 아래 서브에이전트가 닫지 않고 끝난 기록을 알려 준다.
+async function leftOpen($: EngineInterface, parentId: string): Promise<string[]> {
+  const running = runningIds(await $.agent.list())
+  return closingNote(unclosedChildren(await readWorks($), parentId, running))
+}
+
 async function archive($: EngineInterface, id: string): Promise<void> {
   const work = await readWork($, id)
   if (!work) return
@@ -76,7 +86,10 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA, isDeferred: false })
-    await $.command.register({ name: COMMAND, description: '모든 세션의 업무 진행도를 패널로 연다' })
+    await $.command.register({
+      name: COMMAND,
+      description: '모든 세션의 업무 진행도를 패널로 연다. /progress 요약 은 최근 24시간 업무를 글로 정리한다',
+    })
     await refresh($)
     // hot reload 때도 session.start 가 다시 오지만 이미 만든 안내는 그대로 둔다.
     const current = await read($, board)
@@ -100,7 +113,8 @@ export const register: Register = on => {
     await writeWork($, report.work)
     await refresh($)
     const { done, total } = progressOf(report.work)
-    const lines = [`기록함: ${report.work.title} ${done}/${total} (${report.work.status})`, ...report.notes]
+    const children = agentId ? [] : await leftOpen($, report.work.id).catch(() => [])
+    const lines = [`기록함: ${report.work.title} ${done}/${total} (${report.work.status})`, ...report.notes, ...children]
     return { result: lines.join('\n') }
   }).catch(() => ({ deny: '진행 기록을 저장하지 못했어요. 작업은 그대로 이어 가세요.' }))
 
@@ -116,7 +130,10 @@ export const register: Register = on => {
     return { sections: [...result.sections, { id: 'work-progress:guide', text, scope: 'session' as const }] }
   })
 
-  on('command.run', { command: COMMAND }, async $ => {
+  on('command.run', { command: COMMAND }, async ($, e) => {
+    if (SUMMARY_ARGS.includes(e.args.trim().toLowerCase())) {
+      return { text: dailySummary(await readWorks($), await $.clock.now()) }
+    }
     await refresh($)
     const opened = await $.ui.open({ id: PANE, title: PANE_TITLE })
     return { text: opened.isPlaced ? '업무 진행도 패널을 열었어요.' : `패널을 열지 못했어요: ${opened.reason}` }

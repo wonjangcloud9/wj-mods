@@ -1,78 +1,9 @@
-import { describe, expect, mock, test } from 'claude-code/testing'
+import { describe, expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On } from 'claude-code'
 
-import type { LiveAgent, LiveSession, Work } from '../types'
 import { describeCall, guideText, toBoard, toReport } from './model'
+import { COMPOSE, HOUR, LIVE, ME, NOW, SESSIONS, START, TOOL, WORKS, agent, live, work, world } from './testkit'
 import { divider, fit, widthOf } from './view'
-
-const NOW = Date.parse('2026-10-16T03:00:00Z')
-const HOUR = 60 * 60_000
-const HOME = '/home/t'
-const WORKS = `${HOME}/.claude/work-progress/works`
-const SESSIONS = `${HOME}/.claude/sessions`
-const LIVE = `${HOME}/.claude/work-progress/live`
-const ME = 'session-me'
-const TOOL = 'mcp__work-progress__report'
-const START = { cwd: '/tmp', surface: 'terminal' as const, isInteractive: true }
-const COMPOSE = { model: 'm', promptModel: 'm', surfaces: ['terminal' as const], tools: [], outputStyle: null, traits: [] }
-
-function work(id: string, patch: Partial<Work> = {}): Work {
-  return {
-    id,
-    title: `업무 ${id}`,
-    steps: [
-      { title: '하나', isDone: true, evidence: 'abc123' },
-      { title: '둘', isDone: false },
-    ],
-    status: 'active',
-    sessionId: 'session-a',
-    sessionName: 'shy-quokka',
-    createdAt: NOW - 5 * HOUR,
-    updatedAt: NOW - HOUR,
-    ...patch,
-  }
-}
-
-const live = (sessionId: string, name: string, isBusy: boolean): LiveSession => ({ sessionId, name, isBusy })
-const agent = (id: string, description: string): LiveAgent => ({ id, description })
-
-type Spawned = { id: string; description: string; status: string }
-
-function world(on: On, seed: Record<string, unknown> = {}, spawned: Spawned[] = []) {
-  const files = new Map(Object.entries(seed).map(([path, value]) => [path, JSON.stringify(value)]))
-  mock.clock(on, { now: NOW })
-  mock.env(on, { HOME })
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.id', () => ({ value: ME }))
-  on('agent.list', () => ({ value: spawned.map(agent => ({ ...agent, type: 'general-purpose' })) }))
-  on('tool.register', (_, e) => ({ value: { tool: `mcp__work-progress__${e.name}` } }))
-  on('command.register', (_, e) => ({ value: { command: e.name } }))
-  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'base', scope: 'shared' as const }] }))
-  on('fs.list', (_, e) => {
-    const prefix = `${e.path}/`
-    const names = [...files.keys()].filter(path => path.startsWith(prefix)).map(path => path.slice(prefix.length))
-    return {
-      value: names.map(name => ({ name, kind: 'file' as const, size: 1, mtimeMs: NOW, isLink: false })),
-    }
-  })
-  on('fs.read', (_, e) => {
-    const text = files.get(e.path)
-    return text === undefined ? { deny: 'missing' } : { value: text }
-  })
-  on('fs.write', (_, e) => {
-    files.set(e.path, e.text)
-    return { value: undefined }
-  })
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
-  return {
-    read: (path: string) => JSON.parse(files.get(path) ?? 'null') as Work | null,
-    raw: (path: string) => JSON.parse(files.get(path) ?? 'null') as unknown,
-  }
-}
 
 function mountBand($: Engine, surface: 'terminal' | 'desktop') {
   return $.ui.mount({
@@ -399,7 +330,7 @@ test('완료 업무는 구분선 아래 맨 끝에 모은다', async ($, on) => 
   })
   const frame = await ui.find({ type: 'Box' })
   const text = frame?.text ?? ''
-  expect(await ui.find({ type: 'Text', text: divider('오늘 완료 1', 40) })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: divider('✓ 오늘 완료 1', 40) })).toBeDefined()
   expect(text.indexOf('하는 일')).toBeLessThan(text.indexOf('오늘 완료 1 ─'))
   expect(text.indexOf('오늘 완료 1 ─')).toBeLessThan(text.indexOf('끝난 일'))
   await ui.unmount()
@@ -418,14 +349,14 @@ test('완료 업무는 제목 한 줄로 접혀 있다가, 누른 업무만 단�
     requestId: 'work-progress',
     props: { title: '업무 진행도', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   })
-  expect(await ui.find({ type: 'Text', text: '✓ 끝난 일 · 1시간 전' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '✓ 또 끝난 일 · 2시간 전' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 끝난 일 · 1시간 전' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 또 끝난 일 · 2시간 전' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /1\/2/ })).toBeUndefined()
 
   await ui.press({ key: 'toggle-a' })
   expect(await ui.find({ type: 'Text', text: /abc123/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /━+─+ 1\/2/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '✓ 또 끝난 일 · 2시간 전' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^●─○ 1\/2/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 또 끝난 일 · 2시간 전' })).toBeDefined()
 
   await ui.press({ key: 'toggle-a' })
   expect(await ui.find({ type: 'Text', text: /abc123/ })).toBeUndefined()
@@ -446,7 +377,7 @@ test('끝난 서브에이전트는 한 줄로 묶였다가 부모 업무를 펼�
     requestId: 'work-progress',
     props: { title: '업무 진행도', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   })
-  expect(await ui.find({ type: 'Text', text: '✓ 테마 빌더 명세 · 서브 2 · 1시간 전' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 테마 빌더 명세 · 서브 2 · 1시간 전' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /AI 빌더 조사/ })).toBeUndefined()
 
   await ui.press({ key: 'toggle-parent' })
@@ -490,7 +421,7 @@ describe('좁은 화면', () => {
 
     const wide = await pane(100)
     expect(await wide.find({ type: 'Text', text: '업무 1개 · ● 작업 중 1 · 기록 없는 세션 1' })).toBeDefined()
-    expect(await wide.find({ type: 'Text', text: /━+─+ 1\/2 · 1시간 전 · @shy-quokka$/ })).toBeDefined()
+    expect(await wide.find({ type: 'Text', text: '●━◉ 1/2 · 1시간 전 · @shy-quokka' })).toBeDefined()
     await wide.unmount()
 
     const narrow = await pane(44)
@@ -501,7 +432,7 @@ describe('좁은 화면', () => {
 
     const tiny = await pane(30)
     expect(await tiny.find({ type: 'Text', text: '업무 1 · ●1' })).toBeDefined()
-    expect(await tiny.find({ type: 'Text', text: /━+─+ 1\/2 · 1시간 전$/ })).toBeDefined()
+    expect(await tiny.find({ type: 'Text', text: '●━◉ 1/2 · 1시간 전' })).toBeDefined()
     expect(await tiny.find({ type: 'Text', text: /기록 없는 세션/ })).toBeUndefined()
     await tiny.unmount()
   })

@@ -8,7 +8,7 @@ The UI text, notifications and summaries are written in Korean.
 
 | Mod | What it does |
 |---|---|
-| `work-progress` | Collects multi-step work from every open session into a line above the prompt and a `/progress` pane: progress bar per task, running subagents, and the last tool each session used. |
+| `work-progress` | Collects multi-step work from every open session into a line above the prompt and a `/progress` pane. Each task's steps are drawn as a chain of nodes that opens into a vertical flow. It also keeps follow-ups left after a task is done, what a paused task is waiting for, and subagent records that ended without being closed. `/progress 요약` writes a summary of the last 24 hours. |
 | `usage-band` | Shows 5-hour and weekly usage and the Claude status page state in one line above the prompt. |
 | `long-turn-notify` | Sends a macOS notification and plays a voice line when a turn ran longer than 2 minutes, or when a question or permission prompt is waiting. macOS only. |
 | `session-nickname` | Gives each new session a random name so other sessions can address it with SendMessage. |
@@ -19,14 +19,35 @@ The UI text, notifications and summaries are written in Korean.
 `work-progress` pane:
 
 ```
-업무 4개 · ● 작업 중 2 · ○ 멈춤 1 · ✓ 오늘 완료 1
-● 작업 중 Theme builder spec
-    ━━━━──────── 2/8 · 5분 전 · @quiet-otter
-    최근: Bash Run the mod's tests · 방금
-    └ ● Benchmark AI app builders 1/8 · 최근: WebSearch Lovable docs
-    └ ✓ 서브에이전트 5개 끝남
-── 오늘 완료 1 ──────────────────────
-✓ Release notes draft · 2시간 전
+업무 3개 · ● 작업 중 1 · □ 남은 일 1 · ✓ 오늘 완료 1
+
+── ● 작업 중 1 ─────────────────────────────────────────────
+▸ Theme builder spec
+  ●━●━◉─○─○─○ 2/6 · 이 단계 1시간째 · 5분 전 · @quiet-otter
+  지금: Write the requirements
+  최근: Bash Run the mod's tests · 방금
+  └ ● Benchmark AI app builders 1/8 · 최근: WebSearch Lovable docs
+  └ ‖ Seed starter audit 3/4 · 보류로 끝남 · only saving the file is left
+  └ ✓ 서브에이전트 5개 끝남
+
+── □ 남은 일 1 ─────────────────────────────────────────────
+▸ Fix lost attachments · 1일 전
+  □ push
+── ✓ 오늘 완료 1 ───────────────────────────────────────────
+▸ Release notes draft · 2시간 전
+```
+
+Click a task to open its steps as a flow, with the time each step took and its evidence:
+
+```
+▾ Theme builder spec
+  ● Read the brief · 40분 — notes in brief.md
+  ┃
+  ● Benchmark · 1시간 20분 — 3 reports
+  ┃
+  ◉ Write the requirements  ← 지금
+  │
+  ○ Design
 ```
 
 ## Install

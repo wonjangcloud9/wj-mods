@@ -14,7 +14,7 @@ import type {
 
 const DAY_MS = 24 * 60 * 60_000
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
-const PHASE_ORDER: Phase[] = ['yourTurn', 'running', 'stalled', 'paused', 'done']
+export const PHASE_ORDER: Phase[] = ['yourTurn', 'running', 'stalled', 'paused', 'followUp', 'done', 'dormant']
 const REPORTED_STATUS: WorkStatus[] = ['active', 'paused', 'done']
 const ACTIVE_AGENT = ['pending', 'running', 'waiting']
 const ACTIVITY_LENGTH = 80
@@ -25,16 +25,23 @@ function text(value: unknown): string | undefined {
 }
 
 function toStep(value: unknown): Step | null {
-  const { title, isDone, done, evidence } = (value ?? {}) as Record<string, unknown>
+  const { title, isDone, done, evidence, doneAt } = (value ?? {}) as Record<string, unknown>
   const name = text(title)
   if (!name) return null
   const flag = typeof isDone === 'boolean' ? isDone : done === true
   const proof = text(evidence)
-  return proof ? { title: name, isDone: flag, evidence: proof } : { title: name, isDone: flag }
+  const step: Step = proof ? { title: name, isDone: flag, evidence: proof } : { title: name, isDone: flag }
+  return flag && typeof doneAt === 'number' ? { ...step, doneAt } : step
 }
 
 function toSteps(value: unknown): Step[] {
   return Array.isArray(value) ? value.flatMap(item => toStep(item) ?? []) : []
+}
+
+function toLines(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const lines = value.flatMap(item => text(item) ?? [])
+  return lines.length > 0 ? lines : undefined
 }
 
 export function toWork(value: unknown): Work | null {
@@ -51,6 +58,8 @@ export function toWork(value: unknown): Work | null {
     steps: toSteps(v.steps),
     now: text(v.now),
     question: text(v.question),
+    waitingFor: text(v.waitingFor),
+    followups: toLines(v.followups),
     status,
     sessionId,
     sessionName: text(v.sessionName) ?? sessionId.slice(0, 8),
@@ -120,6 +129,10 @@ export function liveState(
   return main ? { activity: main, agents } : { agents }
 }
 
+export function runningIds(list: { id: string; status: string }[]): Set<string> {
+  return new Set(list.filter(agent => ACTIVE_AGENT.includes(agent.status)).map(agent => agent.id))
+}
+
 // 끝난 서브에이전트의 활동은 버린다.
 export function pruneNotes(notes: Record<string, Activity>, live: SessionLive): Record<string, Activity> {
   const keep = new Set([MAIN_LOOP, ...live.agents.map(agent => agent.id)])
@@ -169,17 +182,22 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
   const asked = input.status as WorkStatus
   const status = REPORTED_STATUS.includes(asked) ? asked : 'active'
   const isNewlyDone = status === 'done' && previous?.status !== 'done'
+  // 메인 대화가 서브에이전트의 기록을 대신 닫아도 부모 업무 아래에 그대로 둔다.
+  const keepsSub = !by.agentId && previous !== null && isSubWork(previous)
   const work: Work = {
     id,
     title,
-    steps,
+    steps: timeSteps(steps, previous, by.at),
     now: text(input.now),
     question: text(input.question),
+    waitingFor: text(input.waiting_for),
+    // 남은 일은 잊히지 않도록, 보내지 않으면 이전 목록을 그대로 둔다.
+    followups: 'followups' in input ? toLines(input.followups) : previous?.followups,
     status,
     sessionId: by.sessionId,
     sessionName: by.sessionName,
-    agentId: by.agentId,
-    parentId: by.agentId ? previous?.parentId ?? by.parentId : undefined,
+    agentId: by.agentId ?? (keepsSub ? previous.agentId : undefined),
+    parentId: by.agentId ? previous?.parentId ?? by.parentId : keepsSub ? previous.parentId : undefined,
     createdAt: previous?.createdAt ?? by.at,
     updatedAt: by.at,
     doneAt: status === 'done' ? (isNewlyDone ? by.at : previous?.doneAt ?? by.at) : undefined,
@@ -189,15 +207,74 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
   return { work, notes }
 }
 
+// 단계를 처음 완료로 표시한 시각을 남긴다. 이전 기록에서 같은 이름, 없으면 같은 자리의 단계를 이어 본다.
+// 시각 없이 완료돼 있던 예전 기록의 단계는 지금 끝낸 것으로 치지 않는다.
+function timeSteps(steps: Step[], previous: Work | null, at: number): Step[] {
+  return steps.map((step, index) => {
+    if (!step.isDone) return { ...step, doneAt: undefined }
+    const before = previous?.steps.find(item => item.title === step.title) ?? previous?.steps[index]
+    if (before?.isDone) return before.doneAt === undefined ? { ...step, doneAt: undefined } : { ...step, doneAt: before.doneAt }
+    return { ...step, doneAt: at }
+  })
+}
+
+// 지금 단계를 시작한 시각. 예전 기록이라 완료 시각을 모르면 undefined 다.
+export function stepStartedAt(work: Work): number | undefined {
+  const done = work.steps.filter(step => step.isDone)
+  if (done.length === 0) return work.createdAt
+  const times = done.flatMap(step => (step.doneAt === undefined ? [] : [step.doneAt]))
+  return times.length > 0 ? Math.max(...times) : undefined
+}
+
+// 단계마다 걸린 시간. 끝낸 순서대로 앞 단계를 끝낸 시각부터 잰다. 1분이 안 되거나 모르면 undefined 다.
+export function stepSpans(work: Work): (number | undefined)[] {
+  const order = work.steps
+    .map((step, index) => ({ index, at: step.doneAt }))
+    .filter((item): item is { index: number; at: number } => item.at !== undefined)
+    .sort((a, b) => a.at - b.at)
+  const spans: (number | undefined)[] = work.steps.map(() => undefined)
+  let from = work.createdAt
+  for (const { index, at } of order) {
+    spans[index] = at - from >= 60_000 ? at - from : undefined
+    from = at
+  }
+  return spans
+}
+
+// 서브에이전트가 끝났는데 완료로 닫지 않은 기록. 부모 대화가 마무리했으면 대신 닫아야 한다.
+export function unclosedChildren(works: Work[], parentId: string, running: Set<string>): Work[] {
+  return works.filter(
+    work =>
+      work.parentId === parentId &&
+      (work.status === 'active' || work.status === 'paused') &&
+      !(work.agentId && running.has(work.agentId)),
+  )
+}
+
+export function closingNote(open: Work[]): string[] {
+  if (open.length === 0) return []
+  const lines = open.map(work => {
+    const { done, total } = progressOf(work)
+    const state = work.status === 'paused' ? '보류' : '진행 중'
+    const reason = work.waitingFor ?? work.now
+    return `- ${work.id} · ${work.title} · ${state} ${done}/${total}${reason ? ` · ${reason}` : ''}`
+  })
+  return [
+    `서브에이전트가 닫지 않고 끝난 기록 ${open.length}개가 이 업무 아래 남아 있어요. 그 일을 마무리했으면 각 work_id 로 status done 을 기록해 주세요.`,
+    ...lines,
+  ]
+}
+
 export function progressOf(work: Work): { done: number; total: number; percent: number } {
   const total = work.steps.length
   const done = work.steps.filter(step => step.isDone).length
   return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) }
 }
 
+// 완료 업무는 하루 뒤 숨기지만, 남은 일이 있으면 그 일을 끝내거나 보관할 때까지 남긴다.
 function isVisible(work: Work, now: number): boolean {
   if (work.status === 'archived') return false
-  if (work.status === 'done') return now - (work.doneAt ?? work.updatedAt) < DAY_MS
+  if (work.status === 'done') return Boolean(work.followups) || now - (work.doneAt ?? work.updatedAt) < DAY_MS
   return true
 }
 
@@ -214,7 +291,8 @@ function childOf(agent: LiveAgent, record: Work | undefined): ChildRow {
 
 function finishedOf(record: Work): ChildRow {
   const { done, total } = progressOf(record)
-  return { id: record.id, title: record.title, done, total }
+  const reason = record.waitingFor ?? record.now
+  return { id: record.id, title: record.title, done, total, status: record.status, ...(reason ? { now: reason } : {}) }
 }
 
 export function isSubWork(work: Work): boolean {
@@ -234,11 +312,13 @@ export function parentsBySession(works: Work[]): Map<string, Work> {
 }
 
 // 서브에이전트가 일하는 동안에는 메인 대화가 입력을 기다리거나 보류로 적어 두었어도 그 업무는 작업 중이다.
-function phaseOf(work: Work, live: LiveSession | undefined, isCurrent: boolean, hasAgents: boolean): Phase {
-  if (work.status === 'done') return 'done'
+// 멈춤과 보류는 하루 넘게 기록이 없으면 오래 멈춤으로 접는다.
+function phaseOf(work: Work, live: LiveSession | undefined, isCurrent: boolean, hasAgents: boolean, now: number): Phase {
+  if (work.status === 'done') return work.followups ? 'followUp' : 'done'
   if (hasAgents) return 'running'
-  if (work.status === 'paused') return 'paused'
-  if (!live || !isCurrent) return 'stalled'
+  const isOld = now - work.updatedAt >= DAY_MS
+  if (work.status === 'paused') return isOld ? 'dormant' : 'paused'
+  if (!live || !isCurrent) return isOld ? 'dormant' : 'stalled'
   return live.isBusy ? 'running' : 'yourTurn'
 }
 
@@ -271,7 +351,7 @@ export function toBoard(
         .sort((a, b) => a.createdAt - b.createdAt)
       return {
         work,
-        phase: phaseOf(work, bySession.get(work.sessionId), isCurrent, running.length > 0),
+        phase: phaseOf(work, bySession.get(work.sessionId), isCurrent, running.length > 0, now),
         children: running.map(agent => childOf(agent, recordOf(agent.id))),
         finished: finished.map(finishedOf),
         ...(activity ? { activity } : {}),
@@ -303,7 +383,9 @@ export const PHASE_LABEL: Record<Phase, string> = {
   running: '작업 중',
   stalled: '멈춤',
   paused: '보류',
+  followUp: '남은 일',
   done: '오늘 완료',
+  dormant: '오래 멈춤',
 }
 
 export function countPhases(board: Board): { phase: Phase; count: number }[] {
@@ -324,6 +406,16 @@ export function ago(at: number, now: number): string {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}시간 전`
   return `${Math.floor(hours / 24)}일 전`
+}
+
+// 걸린 시간. 예: 40분, 1시간 20분, 2일
+export function span(ms: number): string {
+  const minutes = Math.max(1, Math.floor(ms / 60_000))
+  if (minutes < 60) return `${minutes}분`
+  const hours = Math.floor(minutes / 60)
+  if (hours >= 24) return `${Math.floor(hours / 24)}일`
+  const rest = minutes % 60
+  return rest > 0 ? `${hours}시간 ${rest}분` : `${hours}시간`
 }
 
 // 화면에 그릴 때 바뀌는 시각을 빼고 비교해, 내용이 같으면 다시 그리지 않는다.
@@ -360,6 +452,13 @@ export const TOOL_SCHEMA = {
     },
     now: { type: 'string', description: '지금 하는 일 한 줄' },
     question: { type: 'string', description: '사용자 답을 기다리는 질문 한 줄. 없으면 생략.' },
+    waiting_for: { type: 'string', description: '보류한 이유나 기다리는 조건 한 줄. 예: 디자인 확정 뒤 구현' },
+    followups: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        '완료한 뒤에도 이 업무 밖에서 할 일. 예: push, 배포 확인. 보내지 않으면 이전 목록을 그대로 두고, 다 끝냈으면 빈 목록을 보낸다.',
+    },
     status: { type: 'string', enum: ['active', 'paused', 'done'], description: '기본은 active' },
   },
   required: ['work_id', 'title', 'steps'],
@@ -370,16 +469,30 @@ const GUIDE = `# 업무 진행 기록
 - 3단계 이상이거나 여러 턴에 걸칠 작업을 시작하면 목표와 전체 단계 목록을 기록한다. 한 번에 끝나는 질문, 설명, 작은 수정에는 기록하지 않는다.
 - 단계를 끝냈을 때, 계획이 바뀌어 단계가 늘거나 줄 때, 사용자 답을 기다리며 턴을 끝내기 직전, 업무가 끝났을 때 다시 기록한다.
 - 단계 완료는 근거가 있을 때만 표시하고 evidence 에 짧게 적는다.
+- 보류로 기록할 때는 기다리는 이유를 waiting_for 에 적는다.
+- 완료로 닫을 때 push, 배포 확인처럼 이 업무 밖에서 할 일이 남으면 followups 에 적는다. 남은 일을 끝내면 그 일을 뺀 목록으로 다시 기록한다.
 - 이전 세션에서 하던 업무를 이어 가면 아래 목록의 work_id 를 그대로 쓴다.
 - 서브에이전트로 일할 때는 부모 대화의 work_id 를 쓰지 않고 맡은 일만 새 work_id 로 기록한다. 부모 업무 아래 한 줄로 보인다.`
 
 // 시스템 안내가 바뀌면 대화 전체의 prompt cache 가 깨지므로 세션 시작 때 한 번만 만든다.
 export function guideText(board: Board | null): string {
-  const open = (board?.rows ?? []).filter(row => row.phase !== 'done' && !isSubWork(row.work))
-  if (open.length === 0) return `${GUIDE}\n\n진행 중인 업무: 없음`
-  const lines = open.map(({ work }) => {
-    const { done, total } = progressOf(work)
-    return `- ${work.id} · ${work.title} · ${done}/${total} 단계 · @${work.sessionName} · ${ago(work.updatedAt, board?.at ?? work.updatedAt)}`
-  })
-  return `${GUIDE}\n\n세션 시작 때 진행 중이던 업무:\n${lines.join('\n')}`
+  const rows = (board?.rows ?? []).filter(row => !isSubWork(row.work))
+  const open = rows.filter(row => row.phase !== 'done' && row.phase !== 'followUp')
+  const left = rows.filter(row => row.phase === 'followUp')
+  const openText =
+    open.length === 0
+      ? '진행 중인 업무: 없음'
+      : `세션 시작 때 진행 중이던 업무:\n${open
+          .map(({ work }) => {
+            const { done, total } = progressOf(work)
+            return `- ${work.id} · ${work.title} · ${done}/${total} 단계 · @${work.sessionName} · ${ago(work.updatedAt, board?.at ?? work.updatedAt)}`
+          })
+          .join('\n')}`
+  const leftText =
+    left.length === 0
+      ? ''
+      : `\n\n남은 일이 있는 완료 업무:\n${left
+          .map(({ work }) => `- ${work.id} · ${work.title} · 남은 일: ${(work.followups ?? []).join(', ')}`)
+          .join('\n')}`
+  return `${GUIDE}\n\n${openText}${leftText}`
 }
