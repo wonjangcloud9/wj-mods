@@ -1,6 +1,6 @@
 import type { LaterItem, Work } from '../types'
 import { dueView } from './due'
-import { openLater } from './later'
+import { laterTopics, openLater } from './later'
 import { dueOfFollowup, isSubWork, progressOf } from './model'
 
 const DAY_MS = 24 * 60 * 60_000
@@ -28,9 +28,18 @@ function leftLine(work: Work, now: number, offsetMin: number): string {
   return `- ${work.title}: ${items.join(', ')}`
 }
 
-function laterLine(item: LaterItem, now: number, offsetMin: number): string {
+// 주제가 나온 업무 제목과 같으면 줄에 다시 적지 않는다.
+function laterLine(item: LaterItem, topic: string, now: number, offsetMin: number): string {
   const due = item.due ? `(${dueView(item.due, now, offsetMin).text})` : ''
-  return `- ${item.text}${due}${item.workTitle ? ` · ${item.workTitle}` : ''}`
+  const from = item.workTitle && item.workTitle !== topic ? ` · ${item.workTitle}` : ''
+  return `- ${item.text}${due}${from}`
+}
+
+function laterLines(items: LaterItem[], now: number, offsetMin: number): string[] {
+  return laterTopics(items).flatMap(({ topic, items: grouped }) => [
+    `[${topic}]`,
+    ...grouped.map(item => laterLine(item, topic, now, offsetMin)),
+  ])
 }
 
 // 최근 24시간 동안 메인 대화가 끝낸 업무, 아직 하는 업무, 완료 뒤 남은 일을 글로 묶는다. 나중에 할 일은 아직 열린 것을 모두 붙인다.
@@ -52,7 +61,7 @@ export function dailySummary(works: Work[], now: number, offsetMin = 0, later: L
     finished.length > 0 ? [`완료 ${finished.length}`, ...finished.flatMap(work => doneLines(work, works))] : [],
     open.length > 0 ? [`진행 중 ${open.length}`, ...open.map(work => openLine(work, now, offsetMin))] : [],
     left.length > 0 ? [`남은 일 ${left.length}`, ...left.map(work => leftLine(work, now, offsetMin))] : [],
-    someday.length > 0 ? [`나중에 ${someday.length}`, ...someday.map(item => laterLine(item, now, offsetMin))] : [],
+    someday.length > 0 ? [`나중에 ${someday.length}`, ...laterLines(someday, now, offsetMin)] : [],
   ].filter(lines => lines.length > 0)
   return ['업무 요약 · 최근 24시간', ...sections.map(lines => lines.join('\n'))].join('\n\n')
 }

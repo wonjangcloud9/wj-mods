@@ -3,6 +3,8 @@ import type { Elements, RenderSurface } from 'claude-code'
 import type { Board, ChildRow, LaterItem, LaterStatus, Phase, Work, WorkRow } from '../types'
 import { dueView } from './due'
 import type { DueTone } from './due'
+import { earliestDue, laterTopics } from './later'
+import type { LaterTopic } from './later'
 import {
   PHASE_LABEL,
   PHASE_ORDER,
@@ -44,8 +46,9 @@ const PHASE_COLOR: Record<Phase, string> = {
 }
 // 나중에 할 일 칸의 표시. 급하지 않은 일이라 남은 일과 다른 모양을 쓴다.
 const LATER = { icon: '◇', label: '나중에', color: 'suggestion' }
-// 펼침 상태는 업무 id 와 같은 자리를 쓰므로, 업무 id 에 없는 ':' 로 나중에 할 일을 구분한다.
-export const LATER_KEY = 'later:'
+// 펼침 상태는 업무 id 와 같은 자리를 쓰므로, 업무 id 에 없는 ':' 로 나중에 할 일과 그 주제를 구분한다.
+const laterKey = (id: string) => `later:${id}`
+const topicKey = (topic: string) => `later-topic:${topic}`
 // 이 칸들은 업무를 제목 한 줄로 접어 두고, 누른 업무만 펼친다.
 const FOLDED: Phase[] = ['followUp', 'done', 'dormant']
 const BAR_WIDTH: Record<Density, number> = { wide: 10, narrow: 6, tiny: 4 }
@@ -389,6 +392,8 @@ type RowActions = {
   onToggle: (id: string) => void
   onArchive: (id: string) => void
   onCloseLater: (id: string, status: Exclude<LaterStatus, 'open'>) => void
+  // 펼칠 줄을 바로 정한다. 나중에 할 일은 주제 아래에 한 번 더 펼치므로 접을 때 주제로 돌아간다.
+  onExpand: (key: string | null) => void
 }
 
 // 완료·남은 일·오래 멈춤 칸의 업무는 제목 한 줄로 접는다. 남은 일과 닫히지 않은 서브 기록은 접어도 보인다.
@@ -508,20 +513,25 @@ function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, offsetMin
   )
 }
 
-// 나중에 할 일 한 줄. 누르면 나온 업무와 남긴 세션, 닫는 버튼이 펼쳐진다. 기한은 적은 일에만 보인다.
-function drawLaterItem(els: Els, item: LaterItem, isOpen: boolean, now: number, offsetMin: number, columns: number, actions: RowActions) {
+// 펼친 주제 아래의 나중에 할 일 한 줄. 누르면 나온 업무와 남긴 세션, 닫는 버튼이 펼쳐진다. 기한은 적은 일에만 보인다.
+// 주제가 나온 업무 제목과 같으면 줄에 다시 적지 않는다. 일을 닫아도 주제는 펼친 채 둔다.
+function drawLaterItem(els: Els, item: LaterItem, topic: string, isOpen: boolean, now: number, offsetMin: number, columns: number, actions: RowActions) {
   const { Box, Button, Text } = els
   const density = densityOf(columns)
   const due = item.due ? dueTail(item.due, now, offsetMin, density) : undefined
-  const from = density === 'wide' && item.workTitle && !isOpen ? ` · ${item.workTitle}` : ''
+  const from = density === 'wide' && item.workTitle && item.workTitle !== topic && !isOpen ? ` · ${item.workTitle}` : ''
   const tail = density === 'tiny' ? '' : `${from} · ${ago(item.createdAt, now)}`
-  const said = fit(item.text, Math.max(4, columns - INDENT - 2 - widthOf(`${due?.text ?? ''}${tail}`)))
-  const key = `${LATER_KEY}${item.id}`
+  const said = fit(item.text, Math.max(4, columns - INDENT - widthOf(`${due?.text ?? ''}${tail}`)))
+  const key = laterKey(item.id)
+  const close = (status: Exclude<LaterStatus, 'open'>) => {
+    actions.onExpand(topicKey(topic))
+    actions.onCloseLater(item.id, status)
+  }
   return (
     <Box flexDirection="column" key={`row-${key}`}>
-      <Button key={`toggle-${key}`} plain onPress={() => actions.onToggle(key)}>
+      <Button key={`toggle-${key}`} plain onPress={() => actions.onExpand(isOpen ? topicKey(topic) : key)}>
         <Text wrap="truncate-end">
-          <Text color={SOFT}>{isOpen ? MARK.open : MARK.closed}</Text> <Text color={LATER.color}>{LATER.icon}</Text> {said}
+          <Text color={SOFT}>{isOpen ? MARK.open : MARK.closed}</Text> {said}
           {due ? <Text color={due.color}>{due.text}</Text> : ''}
           <Text color={SOFT}>{tail}</Text>
         </Text>
@@ -531,8 +541,8 @@ function drawLaterItem(els: Els, item: LaterItem, isOpen: boolean, now: number, 
           {item.workTitle ? drawLabeled(els, '나온 업무: ', item.workTitle) : ''}
           {item.sessionName ? drawLabeled(els, '남긴 세션: ', `@${item.sessionName}`) : ''}
           <Box columnGap={1}>
-            <Button key={`later-done-${item.id}`} label="끝냄" onPress={() => actions.onCloseLater(item.id, 'done')} />
-            <Button key={`later-drop-${item.id}`} label="안 하기" onPress={() => actions.onCloseLater(item.id, 'dropped')} />
+            <Button key={`later-done-${item.id}`} label="끝냄" onPress={() => close('done')} />
+            <Button key={`later-drop-${item.id}`} label="안 하기" onPress={() => close('dropped')} />
           </Box>
         </Box>
       ) : (
@@ -542,6 +552,40 @@ function drawLaterItem(els: Els, item: LaterItem, isOpen: boolean, now: number, 
   )
 }
 
+// 나중에 할 일의 주제 한 줄. 누르면 그 주제의 일이 아래에 펼쳐진다. 기한은 가장 이른 것 하나만 보인다.
+function drawLaterTopic(els: Els, group: LaterTopic, expanded: string | null, now: number, offsetMin: number, columns: number, actions: RowActions) {
+  const { Box, Button, Text } = els
+  const density = densityOf(columns)
+  const key = topicKey(group.topic)
+  const openItem = group.items.find(item => expanded === laterKey(item.id))
+  const isOpen = expanded === key || openItem !== undefined
+  const first = earliestDue(group.items)
+  const due = first ? dueTail(first, now, offsetMin, density) : undefined
+  const count = density === 'tiny' ? ` ${group.items.length}` : ` · ${group.items.length}개`
+  const title = fit(group.topic, Math.max(4, columns - INDENT - 2 - widthOf(`${count}${due?.text ?? ''}`)))
+  return (
+    <Box flexDirection="column" key={`row-${key}`}>
+      <Button key={`toggle-${key}`} plain onPress={() => actions.onExpand(isOpen ? null : key)}>
+        <Text wrap="truncate-end">
+          <Text color={SOFT}>{isOpen ? MARK.open : MARK.closed}</Text> <Text color={LATER.color}>{LATER.icon}</Text> {title}
+          <Text color={SOFT}>{count}</Text>
+          {due ? <Text color={due.color}>{due.text}</Text> : ''}
+        </Text>
+      </Button>
+      {isOpen ? (
+        <Box marginLeft={INDENT} flexDirection="column">
+          {group.items.map(item =>
+            drawLaterItem(els, item, group.topic, item === openItem, now, offsetMin, columns - INDENT, actions),
+          )}
+        </Box>
+      ) : (
+        ''
+      )}
+    </Box>
+  )
+}
+
+// 나중에 할 일은 주제 한 줄씩으로 접어 두고, 누른 주제만 그 아래에 일을 펼친다.
 function drawLater(els: Els, board: Board, expanded: string | null, columns: number, actions: RowActions) {
   const { Box } = els
   if (board.later.length === 0) return ''
@@ -549,8 +593,8 @@ function drawLater(els: Els, board: Board, expanded: string | null, columns: num
   return (
     <Box flexDirection="column" key="group-later">
       {drawRule(els, 'later', label, LATER.color, columns)}
-      {board.later.map(item =>
-        drawLaterItem(els, item, expanded === `${LATER_KEY}${item.id}`, board.at, board.offsetMin, columns, actions),
+      {laterTopics(board.later).map(group =>
+        drawLaterTopic(els, group, expanded, board.at, board.offsetMin, columns, actions),
       )}
     </Box>
   )

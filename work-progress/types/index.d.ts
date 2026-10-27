@@ -71,10 +71,12 @@ export type WorkRow = {
 
 // 나중에 할 일. 업무를 하다 나온, 이번에는 하지 않고 다른 날이나 다른 브랜치에서 할 일이다. 예: develop 에서 씨앗 Node 버전 올리기
 // 업무의 남은 일과 달리 업무를 화면에 붙잡아 두지 않는다. 나온 업무의 제목을 같이 남겨 그 업무가 숨겨져도 출처가 보인다.
+// topic 은 화면에서 일을 묶는 주제다. 예: Node 버전 맞추기. 없으면 나온 업무 제목으로 묶는다.
 export type LaterStatus = 'open' | 'done' | 'dropped'
 export type LaterItem = {
   id: string
   text: string
+  topic?: string
   due?: string
   workId?: string
   workTitle?: string

@@ -14,7 +14,7 @@ import type {
   WorkStatus,
 } from '../types'
 import { NO_DUE, dueView, readDue, toDue } from './due'
-import { LATER_TOOL_NAME, openLater } from './later'
+import { LATER_TOOL_NAME, laterTopics, openLater } from './later'
 import { paceOf } from './pace'
 import { workdayStart } from './workday'
 
@@ -552,7 +552,7 @@ const GUIDE = `# 업무 진행 기록
 - 업무마다 기한을 due 에 적는다. 사용자가 말했거나 티켓·문서에 적힌 기한을 쓴다. 모르면 그 업무를 시작하거나 이어 갈 때 사용자에게 한 번 묻고, 답을 받으면 다시 기록한다. 기한이 없다고 하면 '없음'으로 적는다.
 - 완료로 닫기 전에 push 여부와 코드 상태를 확인한다. 빈 곳이 있으면 답변에 한 줄로 알리고, 사용자가 시킨 대로 닫는다.
 - followups 에는 사용자가 남겨 두라고 한 일만 적는다. 남은 일이 있으면 완료 업무가 화면에 계속 남기 때문이다. 남은 일을 끝내면 그 일을 뺀 목록으로 다시 기록한다. 남은 일마다 기한을 due 에 적고, 업무 기한과 같으면 생략한다.
-- 이번에는 하지 않고 다른 날이나 다른 브랜치에서 할 일은 \`mcp__work-progress__${LATER_TOOL_NAME}\` 의 add 로 남긴다. 사용자가 나중에 하자고 한 일, 업무를 마치며 남는 위험이나 다음에 할 일로 답변에 적은 일이 여기에 든다. 그 일이 나온 업무의 work_id 를 같이 적는다. 그 업무를 마무리하는 데 남은 push·배포 확인은 followups 다.
+- 이번에는 하지 않고 다른 날이나 다른 브랜치에서 할 일은 \`mcp__work-progress__${LATER_TOOL_NAME}\` 의 add 로 남긴다. 사용자가 나중에 하자고 한 일, 업무를 마치며 남는 위험이나 다음에 할 일로 답변에 적은 일이 여기에 든다. 그 일이 나온 업무의 work_id 와 묶을 주제(topic)를 같이 적는다. 이미 있는 주제에 드는 일이면 아래 목록의 주제 이름을 그대로 쓴다. 그 업무를 마무리하는 데 남은 push·배포 확인은 followups 다.
 - 나중에 할 일을 끝내면 done, 하지 않기로 하면 drop 에 id 를 보내 닫는다.
 - 이전 세션에서 하던 업무를 이어 가면 아래 목록의 work_id 를 그대로 쓴다.
 - 서브에이전트로 일할 때는 부모 대화의 work_id 를 쓰지 않고 맡은 일만 새 work_id 로 기록한다. 부모 업무 아래 한 줄로 보인다.`
@@ -586,11 +586,14 @@ export function guideText(board: Board | null): string {
   const laterText =
     later.length === 0
       ? ''
-      : `\n\n나중에 할 일:\n${later
-          .map(item => {
-            const due = item.due ? ` [${dueOf(item.due)}]` : ''
-            const from = item.workTitle ? ` · 출처: ${item.workTitle}` : ''
-            return `- ${item.id} · ${item.text}${due}${from}`
+      : `\n\n나중에 할 일:\n${laterTopics(later)
+          .map(({ topic, items }) => {
+            const lines = items.map(item => {
+              const due = item.due ? ` [${dueOf(item.due)}]` : ''
+              const from = item.workTitle ? ` · 출처: ${item.workTitle}` : ''
+              return `- ${item.id} · ${item.text}${due}${from}`
+            })
+            return [`주제: ${topic}`, ...lines].join('\n')
           })
           .join('\n')}`
   return `${GUIDE}\n\n${openText}${leftText}${laterText}`

@@ -1,10 +1,14 @@
 // 나중에 할 일을 읽고, 도구 입력을 새로 남길 일과 닫을 일로 나눈다. 파일과 화면은 다른 모듈이 맡는다.
 import type { LaterItem, LaterStatus } from '../types'
-import { readDue, toDue } from './due'
+import { NO_DUE, readDue, toDue } from './due'
 
 export const LATER_TOOL_NAME = 'later'
 // /progress 뒤에 이 말과 할 일을 적으면 사용자가 직접 나중에 할 일을 남긴다. 예: /progress 나중 씨앗 Node 버전 올리기
+// 할 일 앞에 '주제:' 를 붙이면 그 주제로 묶는다. 예: /progress 나중 Node 버전: 씨앗 Dockerfile 올리기
 export const LATER_ARGS = ['나중', 'later']
+// 주제도 나온 업무도 없는 일을 묶는 이름
+export const OTHER_TOPIC = '기타'
+const TOPIC_PREFIX = /^([^:：]{1,40})[:：]\s+(\S[\s\S]*)$/
 
 const STATUSES: LaterStatus[] = ['open', 'done', 'dropped']
 
@@ -21,6 +25,7 @@ export function toLater(value: unknown): LaterItem | null {
   return {
     id,
     text: said,
+    topic: text(v.topic),
     due: toDue(v.due),
     workId: text(v.workId),
     workTitle: text(v.workTitle),
@@ -36,16 +41,48 @@ export function openLater(items: LaterItem[]): LaterItem[] {
   return items.filter(item => item.status === 'open').sort((a, b) => a.createdAt - b.createdAt)
 }
 
-// 사용자가 /progress 나중 뒤에 적은 할 일. 없으면 undefined 다.
-export function laterFromArgs(args: string): string | undefined {
+export function topicOf(item: LaterItem): string {
+  return item.topic ?? item.workTitle ?? OTHER_TOPIC
+}
+
+export type LaterTopic = { topic: string; items: LaterItem[] }
+
+// 같은 주제의 일을 한데 묶는다. 주제는 그 안의 일을 처음 남긴 순서로 놓고, 안의 일은 받은 순서를 지킨다.
+export function laterTopics(items: LaterItem[]): LaterTopic[] {
+  const topics = new Map<string, LaterItem[]>()
+  for (const item of items) {
+    const topic = topicOf(item)
+    topics.set(topic, [...(topics.get(topic) ?? []), item])
+  }
+  return [...topics].map(([topic, grouped]) => ({ topic, items: grouped }))
+}
+
+// 묶음에서 가장 이른 기한. 기한을 적은 일이 없거나 모두 '없음'이면 undefined 다. 기한 글자는 날짜 순서와 같게 정렬된다.
+export function earliestDue(items: LaterItem[]): string | undefined {
+  return items
+    .flatMap(item => (item.due && item.due !== NO_DUE ? [item.due] : []))
+    .sort()
+    .at(0)
+}
+
+// 사용자가 /progress 나중 뒤에 적은 할 일과 주제. 할 일이 없으면 undefined 다.
+export function laterFromArgs(args: string): { text: string; topic?: string } | undefined {
   const [word, ...rest] = args.trim().split(/\s+/)
   if (!word || !LATER_ARGS.includes(word.toLowerCase())) return undefined
-  return text(rest.join(' '))
+  const said = text(rest.join(' '))
+  if (!said) return undefined
+  const [, topic, body] = TOPIC_PREFIX.exec(said) ?? []
+  return topic && body ? { text: body.trim(), topic: topic.trim() } : { text: said }
 }
 
 export type LaterBy = { sessionName: string; at: number }
 
-export function newLater(said: string, by: LaterBy, id: string, extra: Pick<LaterItem, 'due' | 'workId' | 'workTitle'> = {}): LaterItem {
+export function newLater(
+  said: string,
+  by: LaterBy,
+  id: string,
+  extra: Pick<LaterItem, 'topic' | 'due' | 'workId' | 'workTitle'> = {},
+): LaterItem {
   return { id, text: said, ...extra, status: 'open', sessionName: by.sessionName, createdAt: by.at, updatedAt: by.at }
 }
 
@@ -69,7 +106,8 @@ function readAdds(value: unknown, ctx: LaterContext): { items: LaterItem[] } | {
     const workId = text(fields.work_id)?.toLowerCase()
     const workTitle = workId ? ctx.works.get(workId) : undefined
     if (workId && !workTitle) return { error: `"${said}": work_id ${workId} 업무를 찾지 못했어요. 업무 없이 나온 일이면 work_id 를 빼 주세요.` }
-    const extra = { ...(due.due ? { due: due.due } : {}), ...(workId ? { workId, workTitle } : {}) }
+    const topic = text(fields.topic)
+    const extra = { ...(topic ? { topic } : {}), ...(due.due ? { due: due.due } : {}), ...(workId ? { workId, workTitle } : {}) }
     items.push(newLater(said, ctx.by, ctx.newId(), extra))
   }
   return { items }
@@ -112,6 +150,11 @@ export const LATER_TOOL_SCHEMA = {
           text: {
             type: 'string',
             description: '할 일 한 줄. 어디서 무엇을 하는지 적는다. 예: develop 에서 씨앗 Dockerfile 의 node:20 을 22 로 올리기',
+          },
+          topic: {
+            type: 'string',
+            description:
+              '이 일을 묶을 주제. 예: Node 버전 맞추기. 이미 있는 주제에 드는 일이면 그 주제 이름을 그대로 쓴다. 생략하면 나온 업무 제목으로 묶는다.',
           },
           due: { type: 'string', description: '기한. 형식은 report 의 due 와 같다. 정해진 기한이 없으면 생략한다.' },
           work_id: { type: 'string', description: '이 일이 나온 업무의 work_id. 업무 없이 나온 일이면 생략한다.' },

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LaterStatus } from '../types'
+import type { LaterItem, LaterStatus } from '../types'
 
 import { readLater, readLive, readSessions, readWork, readWorks, writeLater, writeLive, writeWork } from './files'
 import { LATER_TOOL_DESCRIPTION, LATER_TOOL_NAME, LATER_TOOL_SCHEMA, laterFromArgs, newLater, openLater, readLaterInput } from './later'
@@ -106,14 +106,13 @@ async function closeLater($: EngineInterface, id: string, status: Exclude<LaterS
   const item = (await readLater($)).find(entry => entry.id === id)
   if (!item) return
   await writeLater($, { ...item, status, updatedAt: await $.clock.now() })
-  await update($, expanded, () => null)
   await refresh($)
 }
 
-async function addLaterByUser($: EngineInterface, said: string): Promise<void> {
+async function addLaterByUser($: EngineInterface, said: Pick<LaterItem, 'text' | 'topic'>): Promise<void> {
   const sessionId = await $.session.id()
   const by = { sessionName: await sessionName($, sessionId), at: await $.clock.now() }
-  await writeLater($, newLater(said, by, laterId()))
+  await writeLater($, newLater(said.text, by, laterId(), said.topic ? { topic: said.topic } : {}))
   await refresh($)
 }
 
@@ -196,7 +195,7 @@ export const register: Register = on => {
     const later = laterFromArgs(e.args)
     if (later) {
       await addLaterByUser($, later)
-      return { text: `나중에 할 일로 남겼어요: ${later}` }
+      return { text: `나중에 할 일로 남겼어요: ${later.topic ? `[${later.topic}] ` : ''}${later.text}` }
     }
     await refresh($)
     const opened = await $.ui.open({ id: PANE, title: PANE_TITLE })
@@ -208,6 +207,7 @@ export const register: Register = on => {
     const [current, open] = await Promise.all([read($, board), read($, expanded)])
     return drawPane(els, current, open, e.props.bodyColumns, {
       onToggle: id => void update($, expanded, prev => (prev === id ? null : id)),
+      onExpand: key => void update($, expanded, () => key),
       onArchive: id => void archive($, id),
       onCloseLater: (id, status) => void closeLater($, id, status),
     })
