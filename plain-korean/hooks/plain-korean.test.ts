@@ -4,12 +4,12 @@ import { clarityAsk } from './clarity'
 import { isEnglishAnswer } from './language'
 
 const ENGLISH =
-  'I updated the SSE parser so duplicate events are dropped before they reach the store. ' +
-  'The resubscribe test now covers the reconnect path, and the remaining work is the web builder hook.'
+  'I updated the cache layer so stale entries are dropped before they reach the client. ' +
+  'The retry test now covers the timeout path, and the remaining work is the settings page.'
 
 const KOREAN =
-  '`use-parse-sse-stream.ts` 에서 중복 event 를 store 에 넣기 전에 걸러 내도록 고쳤습니다. ' +
-  'resubscribe test 는 reconnect 경로까지 확인하고, 남은 작업은 web builder hook 입니다.'
+  '`cache.ts` 에서 오래된 항목을 client 에 넘기기 전에 걸러 내도록 고쳤습니다. ' +
+  'retry test 는 timeout 경로까지 확인하고, 남은 작업은 settings page 입니다.'
 
 function submit(text: string) {
   return { text, wait: false, origin: { kind: 'composer' as const } }
@@ -80,21 +80,21 @@ test('subagent 턴은 검사하지 않는다', async ($, on) => {
 
 describe('clarityAsk', () => {
   test('이해하지 못했다는 말을 잡는다', () => {
-    expect(clarityAsk('시도 성사 실패가 뭔말이야.. 하나도 안그려지는데')).toBe('confused')
-    expect(clarityAsk('이해가 안되는데 뭐 어쩌란거냐 각각 뭘 선택해달라는거임')).toBe('confused')
-    expect(clarityAsk('push 해주고 릴리즈 인계는 계속 뭔말이지..')).toBe('confused')
+    expect(clarityAsk('롤백 순서가 뭔말이야.. 하나도 안그려지는데')).toBe('confused')
+    expect(clarityAsk('이해가 안되는데 뭐 어쩌란거냐 둘 중에 뭘 고르라는거임')).toBe('confused')
+    expect(clarityAsk('배포 먼저 하고 마이그레이션은 계속 뭔말이지..')).toBe('confused')
   })
 
   test('짧게 해 달라는 말을 잡는다', () => {
-    expect(clarityAsk('그래서 결론 더 짧게 정리해줘')).toBe('shorter')
-    expect(clarityAsk('완전 요약본도 부탁')).toBe('shorter')
-    expect(clarityAsk('요약해줘 pod가 교체되면 SSE 저거 텀이 몇 분 정도되는거야 그럼?')).toBe('shorter')
+    expect(clarityAsk('결론만 더 짧게 말해줘')).toBe('shorter')
+    expect(clarityAsk('요약본으로 다시 줘')).toBe('shorter')
+    expect(clarityAsk('요약해줘 캐시가 비워지면 다시 채우는 데 몇 분 걸리는거야?')).toBe('shorter')
   })
 
   test('일반 작업 지시와 긴 프롬프트는 건드리지 않는다', () => {
-    expect(clarityAsk('웹 빌드 실패 원인 찾아줘')).toBeUndefined()
-    expect(clarityAsk('회의록 요약 앱부터 봐줘')).toBeUndefined()
-    expect(clarityAsk(`${'회의록 텍스트를 붙여넣으면 정리해 주는 앱 '.repeat(15)}짧게 만들어줘`)).toBeUndefined()
+    expect(clarityAsk('빌드 실패 원인 찾아줘')).toBeUndefined()
+    expect(clarityAsk('주간 요약 메일 기능부터 봐줘')).toBeUndefined()
+    expect(clarityAsk(`${'긴 로그를 붙여넣으면 오류만 골라 주는 도구 '.repeat(15)}짧게 만들어줘`)).toBeUndefined()
   })
 })
 

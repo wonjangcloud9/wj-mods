@@ -3,14 +3,14 @@ import type { On } from 'claude-code'
 
 import { PREFIX, isReportLike, summaryLine, summaryPrompt } from './summary'
 
-const REPORT = `1·2번은 코드·테스트까지 끝냈습니다.\n\n## 1번 — 합류 단계 지목\n\n${'- `retarget_end_modify` 가 첫 갈래로 옮깁니다.\n'.repeat(20)}`
+const REPORT = `1·2번은 코드·테스트까지 끝냈습니다.\n\n## 1번 — 캐시 만료 시각\n\n${'- `expire_at` 을 저장할 때 UTC 로 바꿉니다.\n'.repeat(20)}`
 const SHORT = '네, 커밋했습니다. push 는 하지 않았습니다.'
 
 function finish(answer: string, agentId?: string) {
   return { answer, durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' as const, agentId }
 }
 
-function world(on: On, reply = '합류 단계를 고르면 이제 갈래 전체가 바뀝니다. 따로 할 일은 없습니다.') {
+function world(on: On, reply = '캐시 만료 시각이 이제 시간대와 상관없이 맞습니다. 따로 할 일은 없습니다.') {
   const asked: string[] = []
   const logs: string[] = []
   const clock = mock.clock(on, { now: 0 })
@@ -53,7 +53,7 @@ test('보고서형 답변이 끝나면 쉬운 요약 한 줄을 남긴다', asyn
   await clock.advance(1)
   await clock.settle()
   expect(asked).toHaveLength(1)
-  expect(logs).toEqual([`${PREFIX}합류 단계를 고르면 이제 갈래 전체가 바뀝니다. 따로 할 일은 없습니다.`])
+  expect(logs).toEqual([`${PREFIX}캐시 만료 시각이 이제 시간대와 상관없이 맞습니다. 따로 할 일은 없습니다.`])
 })
 
 test('짧은 답변과 subagent 답변은 요약하지 않는다', async ($, on) => {

@@ -10,7 +10,7 @@ function finish(durationMs: number, reason: 'answer' | 'aborted' | 'error' = 'an
 }
 
 const SUBAGENT_TASK = { id: 'a1', type: 'subagent', status: 'running', description: 'design-data-api-inventory' }
-const CAFFEINATE_TASK = { id: 'b1', type: 'shell', status: 'running', description: '전수조사 동안 Mac 잠자기 방지', command: 'exec caffeinate -dims' }
+const CAFFEINATE_TASK = { id: 'b1', type: 'shell', status: 'running', description: '긴 테스트 동안 Mac 잠자기 방지', command: 'exec caffeinate -dims' }
 
 const SOUNDS = '/Users/me/.claude/long-turn-notify/sounds'
 
@@ -141,7 +141,7 @@ test('백그라운드 작업이 남은 채 응답이 멈추면 알리지 않고,
 test('끝나지 않는 백그라운드 셸만 남은 채 멈추면 바로 알린다', async ($, on) => {
   const { runs, clock } = world(on)
 
-  await $.classic.UserPromptSubmit({ prompt: '전수조사 해줘' })
+  await $.classic.UserPromptSubmit({ prompt: '전체 테스트 돌려줘' })
   await clock.advance(463_000)
   await $.classic.Stop({ stop_hook_active: false, last_assistant_message: ANSWER, background_tasks: [CAFFEINATE_TASK] })
   await clock.advance(1)
