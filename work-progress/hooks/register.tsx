@@ -1,7 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { readLive, readSessions, readWork, readWorks, writeLive, writeWork } from './files'
+import type { LaterStatus } from '../types'
+
+import { readLater, readLive, readSessions, readWork, readWorks, writeLater, writeLive, writeWork } from './files'
+import { LATER_TOOL_DESCRIPTION, LATER_TOOL_NAME, LATER_TOOL_SCHEMA, laterFromArgs, newLater, openLater, readLaterInput } from './later'
 import {
   TOOL_DESCRIPTION,
   TOOL_NAME,
@@ -34,6 +37,8 @@ const PANE = 'work-progress'
 const PANE_TITLE = '업무 진행도'
 const COMMAND = 'progress'
 const TOOL = 'mcp__work-progress__report'
+// 이 도구 이름은 mod 를 처음 불러오기 전에는 엔진 타입 목록에 없어서 정규식으로 맞춘다.
+const LATER_TOOL = new RegExp(`^mcp__work-progress__${LATER_TOOL_NAME}$`)
 const REFRESH_MS = 10_000
 const CLOCK_STEP_MS = 60_000
 
@@ -62,8 +67,14 @@ async function noteActivity($: EngineInterface, call: Record<string, unknown>): 
 // 다른 세션의 기록은 파일로만 들어오므로 주기적으로 다시 읽는다. 내용이 같으면 시각이 1분 넘게 흘렀을 때만 다시 그린다.
 async function refresh($: EngineInterface): Promise<void> {
   await publishLive($).catch(() => undefined)
-  const [works, sessions, live, now] = await Promise.all([readWorks($), readSessions($), readLive($), $.clock.now()])
-  const next = toBoard(works, sessions, now, live, offsetMin)
+  const [works, sessions, live, later, now] = await Promise.all([
+    readWorks($),
+    readSessions($),
+    readLive($),
+    readLater($),
+    $.clock.now(),
+  ])
+  const next = toBoard(works, sessions, now, live, offsetMin, later)
   await update($, board, prev => (prev && sameBoard(prev, next) && now - prev.at < CLOCK_STEP_MS ? prev : next))
 }
 
@@ -86,13 +97,40 @@ async function archive($: EngineInterface, id: string): Promise<void> {
   await refresh($)
 }
 
+// 나중에 할 일 id. 여러 세션이 함께 쓰므로 무작위 글자로 겹치지 않게 한다.
+function laterId(): string {
+  return `later-${crypto.randomUUID().slice(0, 8)}`
+}
+
+async function closeLater($: EngineInterface, id: string, status: Exclude<LaterStatus, 'open'>): Promise<void> {
+  const item = (await readLater($)).find(entry => entry.id === id)
+  if (!item) return
+  await writeLater($, { ...item, status, updatedAt: await $.clock.now() })
+  await update($, expanded, () => null)
+  await refresh($)
+}
+
+async function addLaterByUser($: EngineInterface, said: string): Promise<void> {
+  const sessionId = await $.session.id()
+  const by = { sessionName: await sessionName($, sessionId), at: await $.clock.now() }
+  await writeLater($, newLater(said, by, laterId()))
+  await refresh($)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await $.tool.register({ name: TOOL_NAME, description: TOOL_DESCRIPTION, inputSchema: TOOL_SCHEMA, isDeferred: false })
+    await $.tool.register({
+      name: LATER_TOOL_NAME,
+      description: LATER_TOOL_DESCRIPTION,
+      inputSchema: LATER_TOOL_SCHEMA,
+      isDeferred: false,
+    })
     await $.command.register({
       name: COMMAND,
-      description: '모든 세션의 업무 진행도를 패널로 연다. /progress 요약 은 최근 24시간 업무를 글로 정리한다',
+      description:
+        '모든 세션의 업무 진행도를 패널로 연다. /progress 요약 은 최근 24시간 업무를 글로 정리하고, /progress 나중 <할 일> 은 나중에 할 일을 남긴다',
     })
     offsetMin = await readOffsetMin($)
     await refresh($)
@@ -123,6 +161,22 @@ export const register: Register = on => {
     return { result: lines.join('\n') }
   }).catch(() => ({ deny: '진행 기록을 저장하지 못했어요. 작업은 그대로 이어 가세요.' }))
 
+  on('tool.call', { tool: LATER_TOOL }, async ($, e) => {
+    const input = e as Record<string, unknown>
+    const sessionId = await $.session.id()
+    const [works, later, at, name] = await Promise.all([readWorks($), readLater($), $.clock.now(), sessionName($, sessionId)])
+    const change = readLaterInput(input, {
+      works: new Map(works.map(work => [work.id, work.title])),
+      open: new Map(openLater(later).map(item => [item.id, item])),
+      by: { sessionName: name, at },
+      newId: laterId,
+    })
+    if ('error' in change) return { deny: change.error }
+    await Promise.all([...change.add, ...change.close].map(item => writeLater($, item)))
+    await refresh($)
+    return { result: change.notes.join('\n') }
+  }).catch(() => ({ deny: '나중에 할 일을 저장하지 못했어요. 작업은 그대로 이어 가세요.' }))
+
   // 모든 도구 호출을 지켜보되 막지 않는다. 기록에 실패해도 도구는 그대로 돈다.
   on('tool.call', async ($, e, next) => {
     await noteActivity($, e as Record<string, unknown>).catch(() => undefined)
@@ -137,7 +191,12 @@ export const register: Register = on => {
 
   on('command.run', { command: COMMAND }, async ($, e) => {
     if (SUMMARY_ARGS.includes(e.args.trim().toLowerCase())) {
-      return { text: dailySummary(await readWorks($), await $.clock.now(), offsetMin) }
+      return { text: dailySummary(await readWorks($), await $.clock.now(), offsetMin, await readLater($)) }
+    }
+    const later = laterFromArgs(e.args)
+    if (later) {
+      await addLaterByUser($, later)
+      return { text: `나중에 할 일로 남겼어요: ${later}` }
     }
     await refresh($)
     const opened = await $.ui.open({ id: PANE, title: PANE_TITLE })
@@ -150,6 +209,7 @@ export const register: Register = on => {
     return drawPane(els, current, open, e.props.bodyColumns, {
       onToggle: id => void update($, expanded, prev => (prev === id ? null : id)),
       onArchive: id => void archive($, id),
+      onCloseLater: (id, status) => void closeLater($, id, status),
     })
   })
 
@@ -157,7 +217,7 @@ export const register: Register = on => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
     const current = await read($, board)
-    if (!current || (current.rows.length === 0 && current.untracked.length === 0)) return below
+    if (!current || (current.rows.length === 0 && current.untracked.length === 0 && current.later.length === 0)) return below
 
     const els = $.ui.resolve(e)
     const { Box } = els

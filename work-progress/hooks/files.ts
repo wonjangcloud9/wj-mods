@@ -1,9 +1,10 @@
 import type { EngineInterface } from 'claude-code'
 
-import type { LiveSession, SessionLive, Work } from '../types'
+import type { LaterItem, LiveSession, SessionLive, Work } from '../types'
+import { toLater } from './later'
 import { toLiveSession, toSessionLive, toWork } from './model'
 
-type Dirs = { works: string; sessions: string; live: string }
+type Dirs = { works: string; sessions: string; live: string; later: string }
 
 // 업무 기록은 세션마다 다른 mod 인스턴스가 함께 쓰므로 $.store 대신 업무별 파일로 나눈다.
 async function dirs($: EngineInterface): Promise<Dirs> {
@@ -12,6 +13,7 @@ async function dirs($: EngineInterface): Promise<Dirs> {
     works: `${home}/.claude/work-progress/works`,
     sessions: `${home}/.claude/sessions`,
     live: `${home}/.claude/work-progress/live`,
+    later: `${home}/.claude/work-progress/later`,
   }
 }
 
@@ -60,4 +62,14 @@ export async function readLive($: EngineInterface): Promise<Map<string, SessionL
 
 export async function writeLive($: EngineInterface, sessionId: string, live: SessionLive): Promise<void> {
   await $.fs.write(`${(await dirs($)).live}/${sessionId}.json`, `${JSON.stringify({ sessionId, ...live }, null, 2)}\n`)
+}
+
+// 나중에 할 일도 여러 세션이 함께 쓰므로 일마다 파일 하나로 나눈다.
+export async function readLater($: EngineInterface): Promise<LaterItem[]> {
+  const values = await readJsonFiles($, (await dirs($)).later)
+  return values.flatMap(value => toLater(value) ?? [])
+}
+
+export async function writeLater($: EngineInterface, item: LaterItem): Promise<void> {
+  await $.fs.write(`${(await dirs($)).later}/${item.id}.json`, `${JSON.stringify(item, null, 2)}\n`)
 }

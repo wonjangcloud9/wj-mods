@@ -1,5 +1,6 @@
-import type { Work } from '../types'
+import type { LaterItem, Work } from '../types'
 import { dueView } from './due'
+import { openLater } from './later'
 import { dueOfFollowup, isSubWork, progressOf } from './model'
 
 const DAY_MS = 24 * 60 * 60_000
@@ -27,9 +28,14 @@ function leftLine(work: Work, now: number, offsetMin: number): string {
   return `- ${work.title}: ${items.join(', ')}`
 }
 
-// 최근 24시간 동안 메인 대화가 끝낸 업무, 아직 하는 업무, 완료 뒤 남은 일을 글로 묶는다.
+function laterLine(item: LaterItem, now: number, offsetMin: number): string {
+  const due = item.due ? `(${dueView(item.due, now, offsetMin).text})` : ''
+  return `- ${item.text}${due}${item.workTitle ? ` · ${item.workTitle}` : ''}`
+}
+
+// 최근 24시간 동안 메인 대화가 끝낸 업무, 아직 하는 업무, 완료 뒤 남은 일을 글로 묶는다. 나중에 할 일은 아직 열린 것을 모두 붙인다.
 // 서브에이전트 기록은 부모 업무의 서브 개수로만 센다.
-export function dailySummary(works: Work[], now: number, offsetMin = 0): string {
+export function dailySummary(works: Work[], now: number, offsetMin = 0, later: LaterItem[] = []): string {
   const main = works.filter(work => !isSubWork(work))
   const isRecent = (at: number) => now - at < DAY_MS
   const finished = main
@@ -39,12 +45,14 @@ export function dailySummary(works: Work[], now: number, offsetMin = 0): string 
     .filter(work => (work.status === 'active' || work.status === 'paused') && isRecent(work.updatedAt))
     .sort((a, b) => b.updatedAt - a.updatedAt)
   const left = main.filter(work => work.status === 'done' && work.followups)
+  const someday = openLater(later)
 
-  if (finished.length + open.length + left.length === 0) return '최근 24시간에 기록된 업무가 없어요.'
+  if (finished.length + open.length + left.length + someday.length === 0) return '최근 24시간에 기록된 업무가 없어요.'
   const sections = [
     finished.length > 0 ? [`완료 ${finished.length}`, ...finished.flatMap(work => doneLines(work, works))] : [],
     open.length > 0 ? [`진행 중 ${open.length}`, ...open.map(work => openLine(work, now, offsetMin))] : [],
     left.length > 0 ? [`남은 일 ${left.length}`, ...left.map(work => leftLine(work, now, offsetMin))] : [],
+    someday.length > 0 ? [`나중에 ${someday.length}`, ...someday.map(item => laterLine(item, now, offsetMin))] : [],
   ].filter(lines => lines.length > 0)
   return ['업무 요약 · 최근 24시간', ...sections.map(lines => lines.join('\n'))].join('\n\n')
 }

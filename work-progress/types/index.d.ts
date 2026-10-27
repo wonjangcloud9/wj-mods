@@ -69,8 +69,23 @@ export type WorkRow = {
   paceMs?: number
 }
 
-// offsetMin 은 이 컴퓨터의 UTC 차이(분)다. 기한까지 남은 날을 셀 때 쓴다.
-export type Board = { rows: WorkRow[]; untracked: LiveSession[]; at: number; offsetMin: number }
+// 나중에 할 일. 업무를 하다 나온, 이번에는 하지 않고 다른 날이나 다른 브랜치에서 할 일이다. 예: develop 에서 씨앗 Node 버전 올리기
+// 업무의 남은 일과 달리 업무를 화면에 붙잡아 두지 않는다. 나온 업무의 제목을 같이 남겨 그 업무가 숨겨져도 출처가 보인다.
+export type LaterStatus = 'open' | 'done' | 'dropped'
+export type LaterItem = {
+  id: string
+  text: string
+  due?: string
+  workId?: string
+  workTitle?: string
+  status: LaterStatus
+  sessionName: string
+  createdAt: number
+  updatedAt: number
+}
+
+// offsetMin 은 이 컴퓨터의 UTC 차이(분)다. 기한까지 남은 날을 셀 때 쓴다. later 는 아직 하지 않은 나중에 할 일이다.
+export type Board = { rows: WorkRow[]; untracked: LiveSession[]; later: LaterItem[]; at: number; offsetMin: number }
 
 declare module 'claude-code' {
   interface PluginState {

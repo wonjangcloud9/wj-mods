@@ -1,6 +1,6 @@
 import type { Elements, RenderSurface } from 'claude-code'
 
-import type { Board, ChildRow, Phase, Work, WorkRow } from '../types'
+import type { Board, ChildRow, LaterItem, LaterStatus, Phase, Work, WorkRow } from '../types'
 import { dueView } from './due'
 import type { DueTone } from './due'
 import {
@@ -42,6 +42,10 @@ const PHASE_COLOR: Record<Phase, string> = {
   done: 'success',
   dormant: 'subtle',
 }
+// 나중에 할 일 칸의 표시. 급하지 않은 일이라 남은 일과 다른 모양을 쓴다.
+const LATER = { icon: '◇', label: '나중에', color: 'suggestion' }
+// 펼침 상태는 업무 id 와 같은 자리를 쓰므로, 업무 id 에 없는 ':' 로 나중에 할 일을 구분한다.
+export const LATER_KEY = 'later:'
 // 이 칸들은 업무를 제목 한 줄로 접어 두고, 누른 업무만 펼친다.
 const FOLDED: Phase[] = ['followUp', 'done', 'dormant']
 const BAR_WIDTH: Record<Density, number> = { wide: 10, narrow: 6, tiny: 4 }
@@ -120,6 +124,7 @@ export function drawSummary(els: Els, board: Board, density: Density, hasHint: b
   const total = density === 'wide' ? `업무 ${board.rows.length}개` : `업무 ${board.rows.length}`
   const untracked = density === 'wide' && board.untracked.length > 0 ? `기록 없는 세션 ${board.untracked.length}` : ''
   const due = density === 'tiny' ? { over: 0, today: 0 } : countDue(board)
+  const later = board.later.length
   return (
     <Text wrap="truncate-end">
       <Text bold>{total}</Text>
@@ -129,6 +134,14 @@ export function drawSummary(els: Els, board: Board, density: Density, hasHint: b
           <Text color={PHASE_COLOR[phase]}>{phaseCount(phase, count, density)}</Text>
         </Text>
       ))}
+      {later > 0 ? (
+        <Text>
+          <Text dimColor>{' · '}</Text>
+          <Text color={LATER.color}>{density === 'tiny' ? `${LATER.icon}${later}` : `${LATER.icon} ${LATER.label} ${later}`}</Text>
+        </Text>
+      ) : (
+        ''
+      )}
       {due.over > 0 ? <Text color={DUE_COLOR.over}>{` · 기한 지남 ${due.over}`}</Text> : ''}
       {due.today > 0 ? <Text color={DUE_COLOR.soon}>{` · 기한 오늘 ${due.today}`}</Text> : ''}
       {untracked ? <Text color={SOFT}>{` · ${untracked}`}</Text> : ''}
@@ -137,19 +150,22 @@ export function drawSummary(els: Els, board: Board, density: Density, hasHint: b
   )
 }
 
-function drawHeader(els: Els, phase: Phase, count: number, columns: number) {
+function drawRule(els: Els, key: string, label: string, color: string, columns: number) {
   const { Text } = els
-  const label = phaseCount(phase, count, densityOf(columns))
   const rule = divider(label, columns).slice(`── ${label} `.length)
   return (
-    <Text wrap="truncate-end" key={`head-${phase}`}>
+    <Text wrap="truncate-end" key={`head-${key}`}>
       <Text dimColor>{'── '}</Text>
-      <Text color={PHASE_COLOR[phase]} bold>
+      <Text color={color} bold>
         {label}
       </Text>
       <Text dimColor>{` ${rule}`}</Text>
     </Text>
   )
+}
+
+function drawHeader(els: Els, phase: Phase, count: number, columns: number) {
+  return drawRule(els, phase, phaseCount(phase, count, densityOf(columns)), PHASE_COLOR[phase], columns)
 }
 
 // 서브에이전트가 완료로 닫지 않고 끝난 기록. 부모 업무를 접어 두어도 보인다.
@@ -369,7 +385,11 @@ function etaText(row: WorkRow, now: number): string {
   return `약 ${span(Math.round(ms / unit) * unit)} 남음`
 }
 
-type RowActions = { onToggle: (id: string) => void; onArchive: (id: string) => void }
+type RowActions = {
+  onToggle: (id: string) => void
+  onArchive: (id: string) => void
+  onCloseLater: (id: string, status: Exclude<LaterStatus, 'open'>) => void
+}
 
 // 완료·남은 일·오래 멈춤 칸의 업무는 제목 한 줄로 접는다. 남은 일과 닫히지 않은 서브 기록은 접어도 보인다.
 // 완료·남은 일 칸의 업무는 끝났으므로 업무 기한을 보이지 않는다. 남은 일은 줄마다 기한을 보인다.
@@ -488,11 +508,59 @@ function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, offsetMin
   )
 }
 
+// 나중에 할 일 한 줄. 누르면 나온 업무와 남긴 세션, 닫는 버튼이 펼쳐진다. 기한은 적은 일에만 보인다.
+function drawLaterItem(els: Els, item: LaterItem, isOpen: boolean, now: number, offsetMin: number, columns: number, actions: RowActions) {
+  const { Box, Button, Text } = els
+  const density = densityOf(columns)
+  const due = item.due ? dueTail(item.due, now, offsetMin, density) : undefined
+  const from = density === 'wide' && item.workTitle && !isOpen ? ` · ${item.workTitle}` : ''
+  const tail = density === 'tiny' ? '' : `${from} · ${ago(item.createdAt, now)}`
+  const said = fit(item.text, Math.max(4, columns - INDENT - 2 - widthOf(`${due?.text ?? ''}${tail}`)))
+  const key = `${LATER_KEY}${item.id}`
+  return (
+    <Box flexDirection="column" key={`row-${key}`}>
+      <Button key={`toggle-${key}`} plain onPress={() => actions.onToggle(key)}>
+        <Text wrap="truncate-end">
+          <Text color={SOFT}>{isOpen ? MARK.open : MARK.closed}</Text> <Text color={LATER.color}>{LATER.icon}</Text> {said}
+          {due ? <Text color={due.color}>{due.text}</Text> : ''}
+          <Text color={SOFT}>{tail}</Text>
+        </Text>
+      </Button>
+      {isOpen ? (
+        <Box marginLeft={INDENT} flexDirection="column">
+          {item.workTitle ? drawLabeled(els, '나온 업무: ', item.workTitle) : ''}
+          {item.sessionName ? drawLabeled(els, '남긴 세션: ', `@${item.sessionName}`) : ''}
+          <Box columnGap={1}>
+            <Button key={`later-done-${item.id}`} label="끝냄" onPress={() => actions.onCloseLater(item.id, 'done')} />
+            <Button key={`later-drop-${item.id}`} label="안 하기" onPress={() => actions.onCloseLater(item.id, 'dropped')} />
+          </Box>
+        </Box>
+      ) : (
+        ''
+      )}
+    </Box>
+  )
+}
+
+function drawLater(els: Els, board: Board, expanded: string | null, columns: number, actions: RowActions) {
+  const { Box } = els
+  if (board.later.length === 0) return ''
+  const label = densityOf(columns) === 'tiny' ? `${LATER.icon}${board.later.length}` : `${LATER.icon} ${LATER.label} ${board.later.length}`
+  return (
+    <Box flexDirection="column" key="group-later">
+      {drawRule(els, 'later', label, LATER.color, columns)}
+      {board.later.map(item =>
+        drawLaterItem(els, item, expanded === `${LATER_KEY}${item.id}`, board.at, board.offsetMin, columns, actions),
+      )}
+    </Box>
+  )
+}
+
 // 할 일이 남은 칸을 위에, 접어 두는 칸을 아래에 둔다. 칸마다 이름과 개수를 적은 선을 긋는다.
 export function drawPane(els: Els, board: Board | null, expanded: string | null, columns: number, actions: RowActions) {
   const { Box, Text } = els
   const density = densityOf(columns)
-  if (!board || (board.rows.length === 0 && board.untracked.length === 0)) {
+  if (!board || (board.rows.length === 0 && board.untracked.length === 0 && board.later.length === 0)) {
     return <Text color={SOFT}>기록된 업무가 없어요.</Text>
   }
 
@@ -516,6 +584,7 @@ export function drawPane(els: Els, board: Board | null, expanded: string | null,
         </Box>
       ))}
       {untracked && density !== 'tiny' ? <Text color={SOFT} wrap="truncate-end">{`기록 없는 세션: ${untracked}`}</Text> : ''}
+      {drawLater(els, board, expanded, columns, actions)}
       {folded.map(({ phase, rows }) => (
         <Box flexDirection="column" key={`group-${phase}`}>
           {drawHeader(els, phase, rows.length, columns)}

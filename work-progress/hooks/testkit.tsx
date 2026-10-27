@@ -11,6 +11,7 @@ export const HOME = '/home/t'
 export const WORKS = `${HOME}/.claude/work-progress/works`
 export const SESSIONS = `${HOME}/.claude/sessions`
 export const LIVE = `${HOME}/.claude/work-progress/live`
+export const LATER = `${HOME}/.claude/work-progress/later`
 export const ME = 'session-me'
 export const TOOL = 'mcp__work-progress__report'
 export const START = { cwd: '/tmp', surface: 'terminal' as const, isInteractive: true }
