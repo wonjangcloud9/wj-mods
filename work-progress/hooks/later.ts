@@ -3,8 +3,8 @@ import type { LaterItem, LaterStatus } from '../types'
 import { NO_DUE, readDue, toDue } from './due'
 
 export const LATER_TOOL_NAME = 'later'
-// /progress 뒤에 이 말과 할 일을 적으면 사용자가 직접 나중에 할 일을 남긴다. 예: /progress 나중 씨앗 Node 버전 올리기
-// 할 일 앞에 '주제:' 를 붙이면 그 주제로 묶는다. 예: /progress 나중 Node 버전: 씨앗 Dockerfile 올리기
+// /progress 뒤에 이 말과 할 일을 적으면 사용자가 직접 나중에 할 일을 남긴다. 예: /progress 나중 React 19 로 올리기
+// 할 일 앞에 '주제:' 를 붙이면 그 주제로 묶는다. 예: /progress 나중 의존성: Dockerfile 정리하기
 export const LATER_ARGS = ['나중', 'later']
 // 주제도 나온 업무도 없는 일을 묶는 이름
 export const OTHER_TOPIC = '기타'
@@ -149,12 +149,12 @@ export const LATER_TOOL_SCHEMA = {
         properties: {
           text: {
             type: 'string',
-            description: '할 일 한 줄. 어디서 무엇을 하는지 적는다. 예: develop 에서 씨앗 Dockerfile 의 node:20 을 22 로 올리기',
+            description: '할 일 한 줄. 어디서 무엇을 하는지 적는다. 예: main 에서 web 의 React 를 19 로 올리기',
           },
           topic: {
             type: 'string',
             description:
-              '이 일을 묶을 주제. 예: Node 버전 맞추기. 이미 있는 주제에 드는 일이면 그 주제 이름을 그대로 쓴다. 생략하면 나온 업무 제목으로 묶는다.',
+              '이 일을 묶을 주제. 예: 의존성 올리기. 이미 있는 주제에 드는 일이면 그 주제 이름을 그대로 쓴다. 생략하면 나온 업무 제목으로 묶는다.',
           },
           due: { type: 'string', description: '기한. 형식은 report 의 due 와 같다. 정해진 기한이 없으면 생략한다.' },
           work_id: { type: 'string', description: '이 일이 나온 업무의 work_id. 업무 없이 나온 일이면 생략한다.' },

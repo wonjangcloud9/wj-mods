@@ -90,14 +90,14 @@ test('메인 대화가 기록하면 서브에이전트가 닫지 않고 끝난 �
   const { read } = world(
     on,
     {
-      [`${WORKS}/parent.json`]: work('parent', { sessionId: ME, title: '테마 빌더 명세' }),
+      [`${WORKS}/parent.json`]: work('parent', { sessionId: ME, title: '검색 기능 명세' }),
       [`${WORKS}/sub-left.json`]: work('sub-left', {
         sessionId: ME,
         agentId: 'z',
         parentId: 'parent',
-        title: '씨앗 조사',
+        title: '캐시 구조 조사',
         status: 'paused',
-        now: '대상 경로 저장만 남음',
+        now: '결과 파일 저장만 남음',
       }),
       [`${WORKS}/sub-running.json`]: work('sub-running', { sessionId: ME, agentId: 'x', parentId: 'parent', title: '도는 조사' }),
       [`${WORKS}/sub-done.json`]: work('sub-done', { sessionId: ME, agentId: 'y', parentId: 'parent', status: 'done', doneAt: NOW }),
@@ -107,21 +107,21 @@ test('메인 대화가 기록하면 서브에이전트가 닫지 않고 끝난 �
   await $.session.start(START)
 
   const steps = [{ title: 'a', done: false }]
-  const ran = await $.tool.call({ tool: TOOL, work_id: 'parent', title: '테마 빌더 명세', steps })
+  const ran = await $.tool.call({ tool: TOOL, work_id: 'parent', title: '검색 기능 명세', steps })
   expect(ran.result).toContain('서브에이전트가 닫지 않고 끝난 기록 1개')
-  expect(ran.result).toContain('- sub-left · 씨앗 조사 · 보류 1/2 · 대상 경로 저장만 남음')
+  expect(ran.result).toContain('- sub-left · 캐시 구조 조사 · 보류 1/2 · 결과 파일 저장만 남음')
   expect(ran.result).not.toContain('sub-running')
 
   const closed = await $.tool.call({
     tool: TOOL,
     work_id: 'sub-left',
-    title: '씨앗 조사',
+    title: '캐시 구조 조사',
     steps: [{ title: 'a', done: true, evidence: '대상 경로에 있음' }],
     status: 'done',
   })
   expect(closed.result).not.toContain('닫지 않고')
   expect(read(`${WORKS}/sub-left.json`)).toMatchObject({ status: 'done', agentId: 'z', parentId: 'parent' })
-  const again = await $.tool.call({ tool: TOOL, work_id: 'parent', title: '테마 빌더 명세', steps })
+  const again = await $.tool.call({ tool: TOOL, work_id: 'parent', title: '검색 기능 명세', steps })
   expect(again.result).not.toContain('닫지 않고')
 })
 
@@ -129,7 +129,7 @@ test('업무 줄에 단계를 노드로 잇고, 펼치면 위에서 아래로 �
   world(on, {
     [`${WORKS}/flow.json`]: work('flow', {
       sessionId: 'a',
-      title: '씨앗 조사',
+      title: '캐시 구조 조사',
       createdAt: NOW - 3 * HOUR,
       updatedAt: NOW - 10 * MINUTE,
       now: '문서 작성 중',
@@ -144,12 +144,12 @@ test('업무 줄에 단계를 노드로 잇고, 펼치면 위에서 아래로 �
   await $.session.start(START)
   const ui = await mountPane($)
   expect(await ui.find({ type: 'Text', text: /^── ● 작업 중 1 ─+$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▸ 씨앗 조사' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 캐시 구조 조사' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '●━◉─○ 1/3 · 이 단계 2시간째 · 10분 전 · @shy-quokka' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '지금: 문서 작성 중' })).toBeDefined()
 
   await ui.press({ key: 'toggle-flow' })
-  expect(await ui.find({ type: 'Text', text: '▾ 씨앗 조사' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▾ 캐시 구조 조사' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '● 조사 · 1시간 — 원문' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '┃' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '◉ 작성  ← 지금' })).toBeDefined()
@@ -176,7 +176,7 @@ test('접어 둔 칸에서도 남은 일과 닫히지 않은 서브 기록은 �
     [`${WORKS}/left.json`]: work('left', { status: 'done', doneAt: NOW - 30 * HOUR, followups: [{ text: 'push' }, { text: '배포 확인' }] }),
     [`${WORKS}/sleepy.json`]: work('sleepy', { status: 'paused', updatedAt: NOW - 30 * HOUR, waitingFor: '디자인 확정' }),
     [`${WORKS}/parent.json`]: work('parent', { status: 'done', doneAt: NOW - HOUR }),
-    [`${WORKS}/sub-paused.json`]: work('sub-paused', { parentId: 'parent', status: 'paused', now: '대상 경로 저장만 남음' }),
+    [`${WORKS}/sub-paused.json`]: work('sub-paused', { parentId: 'parent', status: 'paused', now: '결과 파일 저장만 남음' }),
     [`${WORKS}/sub-ok.json`]: work('sub-ok', { parentId: 'parent', status: 'done', doneAt: NOW - HOUR }),
   })
   await $.session.start(START)
@@ -189,7 +189,7 @@ test('접어 둔 칸에서도 남은 일과 닫히지 않은 서브 기록은 �
   expect(await ui.find({ type: 'Text', text: '▸ 업무 sleepy · 기한 모름 · 1/2 · 1일 전' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '기다림: 디자인 확정' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '▸ 업무 parent · 서브 2 · 1시간 전' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '└ ‖ 업무 sub-paused 1/2 · 보류로 끝남 · 대상 경로 저장만 남음' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '└ ‖ 업무 sub-paused 1/2 · 보류로 끝남 · 결과 파일 저장만 남음' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /업무 sub-ok/ })).toBeUndefined()
 
   const text = (await ui.find({ type: 'Box' }))?.text ?? ''

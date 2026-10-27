@@ -23,16 +23,16 @@ The UI text, notifications and summaries are written in Korean.
 업무 3개 · ● 작업 중 1 · □ 남은 일 1 · ✓ 오늘 완료 1
 
 ── ● 작업 중 1 ─────────────────────────────────────────────
-▸ Theme builder spec
+▸ Search feature spec
   ●━●━◉─○─○─○ 2/6 · 약 2시간 남음 · 이 단계 1시간째 · 5분 전 · @quiet-otter
   지금: Write the requirements
   최근: Bash Run the mod's tests · 방금
-  └ ● Benchmark AI app builders 1/8 · 최근: WebSearch Lovable docs
-  └ ‖ Seed starter audit 3/4 · 보류로 끝남 · only saving the file is left
+  └ ● Compare UI libraries 1/8 · 최근: WebSearch library docs
+  └ ‖ Cache layout audit 3/4 · 보류로 끝남 · only saving the file is left
   └ ✓ 서브에이전트 5개 끝남
 
 ── □ 남은 일 1 ─────────────────────────────────────────────
-▸ Fix lost attachments · 1일 전
+▸ Fix login redirect · 1일 전
   □ push
 ── ✓ 오늘 완료 1 ───────────────────────────────────────────
 ▸ Release notes draft · 2시간 전
@@ -41,7 +41,7 @@ The UI text, notifications and summaries are written in Korean.
 Click a task to open its steps as a flow, with the time each step took and its evidence:
 
 ```
-▾ Theme builder spec
+▾ Search feature spec
   ● Read the brief · 40분 — notes in brief.md
   ┃
   ● Benchmark · 1시간 20분 — 3 reports

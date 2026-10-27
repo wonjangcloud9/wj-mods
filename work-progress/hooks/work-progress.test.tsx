@@ -19,12 +19,12 @@ describe('기록', () => {
 
   test('처음 기록하면 시작 시각과 세션을 남기고, 근거 없는 완료 단계를 알려 준다', () => {
     const report = toReport(
-      { work_id: 'Model Select', title: '모델 선택 구현', steps: [{ title: 'a', done: true }, { title: 'b', done: false }] },
+      { work_id: 'Alert Settings', title: '알림 설정 구현', steps: [{ title: 'a', done: true }, { title: 'b', done: false }] },
       null,
       by,
     )
     if ('error' in report) throw new Error(report.error)
-    expect(report.work).toMatchObject({ id: 'model-select', status: 'active', sessionName: 'crispy-mandu', createdAt: NOW })
+    expect(report.work).toMatchObject({ id: 'alert-settings', status: 'active', sessionName: 'crispy-mandu', createdAt: NOW })
     expect(report.notes[0]).toBe('근거 없이 완료로 표시한 단계: a')
     expect(report.notes[1]).toContain('이 업무의 기한을 몰라요.')
   })
@@ -167,9 +167,9 @@ describe('진행판', () => {
   })
 
   test('시스템 안내에는 끝나지 않은 업무만 id 와 함께 넣는다', () => {
-    const board = toBoard([work('e2e18', { sessionId: 'a' }), work('fin', { status: 'done', doneAt: NOW })], [live('a', 'a', true)], NOW)
+    const board = toBoard([work('checkout-e2e', { sessionId: 'a' }), work('fin', { status: 'done', doneAt: NOW })], [live('a', 'a', true)], NOW)
     const text = guideText(board)
-    expect(text).toContain('- e2e18 · 업무 e2e18 · 1/2 단계 · 기한 모름 · @shy-quokka · 1시간 전')
+    expect(text).toContain('- checkout-e2e · 업무 checkout-e2e · 1/2 단계 · 기한 모름 · @shy-quokka · 1시간 전')
     expect(text).not.toContain('fin')
     expect(guideText(null)).toContain('진행 중인 업무: 없음')
   })
@@ -181,16 +181,16 @@ test('도구로 기록하면 업무 파일이 생기고 입력창 위 한 줄에
 
   const ran = await $.tool.call({
     tool: TOOL,
-    work_id: 'e2e18',
-    title: 'E2E 18개',
+    work_id: 'checkout-e2e',
+    title: '결제 E2E',
     steps: [
       { title: '#01', done: true, evidence: '통과' },
       { title: '#02', done: false },
     ],
     now: '#02 확인 중',
   })
-  expect(ran.result).toContain('기록함: E2E 18개 1/2 (active)\n이 업무의 기한을 몰라요.')
-  expect(read(`${WORKS}/e2e18.json`)).toMatchObject({ sessionName: 'crispy-mandu', now: '#02 확인 중' })
+  expect(ran.result).toContain('기록함: 결제 E2E 1/2 (active)\n이 업무의 기한을 몰라요.')
+  expect(read(`${WORKS}/checkout-e2e.json`)).toMatchObject({ sessionName: 'crispy-mandu', now: '#02 확인 중' })
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await mountBand($, surface)
@@ -204,12 +204,12 @@ test('서브에이전트의 기록은 부모 업무 아래 한 줄로 보이고,
   const { read, raw } = world(
     on,
     {
-      [`${WORKS}/parent.json`]: work('parent', { sessionId: ME, title: '테마 빌더 명세' }),
+      [`${WORKS}/parent.json`]: work('parent', { sessionId: ME, title: '검색 기능 명세' }),
       [`${SESSIONS}/1.json`]: { sessionId: ME, name: 'turbo-dalgona', status: 'idle' },
     },
     [
-      { id: 'x', description: 'AI 빌더 벤치마크', status: 'running' },
-      { id: 'y', description: '코드 현황 조사', status: 'running' },
+      { id: 'x', description: '라이브러리 비교', status: 'running' },
+      { id: 'y', description: '코드 구조 조사', status: 'running' },
       { id: 'done', description: '끝난 조사', status: 'completed' },
     ],
   )
@@ -217,8 +217,8 @@ test('서브에이전트의 기록은 부모 업무 아래 한 줄로 보이고,
   expect(raw(`${LIVE}/${ME}.json`)).toEqual({
     sessionId: ME,
     agents: [
-      { id: 'x', description: 'AI 빌더 벤치마크' },
-      { id: 'y', description: '코드 현황 조사' },
+      { id: 'x', description: '라이브러리 비교' },
+      { id: 'y', description: '코드 구조 조사' },
     ],
   })
 
@@ -226,7 +226,7 @@ test('서브에이전트의 기록은 부모 업무 아래 한 줄로 보이고,
     tool: TOOL,
     agentId: 'x',
     work_id: 'bench-ai',
-    title: 'Lovable 공식 문서 조사',
+    title: '공식 문서 조사',
     steps: [
       { title: 'a', done: true, evidence: '원문' },
       { title: 'b', done: false },
@@ -242,8 +242,8 @@ test('서브에이전트의 기록은 부모 업무 아래 한 줄로 보이고,
     props: { title: '업무 진행도', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   })
   expect(await ui.find({ type: 'Text', text: '업무 1개 · ● 작업 중 1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '└ ● Lovable 공식 문서 조사 1/2' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '└ ● 코드 현황 조사' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '└ ● 공식 문서 조사 1/2' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '└ ● 코드 구조 조사' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /끝난 조사/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -252,10 +252,10 @@ test('도구를 쓰면 최근 활동이 파일로 알려지고 업무 줄과 서
   const { raw } = world(
     on,
     {
-      [`${WORKS}/parent.json`]: work('parent', { sessionId: ME, title: '테마 빌더 명세' }),
+      [`${WORKS}/parent.json`]: work('parent', { sessionId: ME, title: '검색 기능 명세' }),
       [`${SESSIONS}/1.json`]: { sessionId: ME, name: 'turbo-dalgona', status: 'busy' },
     },
-    [{ id: 'x', description: '코드 현황 조사', status: 'running' }],
+    [{ id: 'x', description: '코드 구조 조사', status: 'running' }],
   )
   on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok' }))
   on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }))
@@ -263,12 +263,12 @@ test('도구를 쓰면 최근 활동이 파일로 알려지고 업무 줄과 서
 
   await $.tool.call({ tool: 'Bash', command: 'curl -H "Authorization: Bearer secret"', description: '빌드 끝날 때까지 대기' })
   await $.tool.call({ tool: 'Read', file_path: '/repo/hooks/view.tsx', agentId: 'x' })
-  await $.tool.call({ tool: TOOL, work_id: 'parent', title: '테마 빌더 명세', steps: [{ title: 'a', done: false }] })
+  await $.tool.call({ tool: TOOL, work_id: 'parent', title: '검색 기능 명세', steps: [{ title: 'a', done: false }] })
 
   expect(raw(`${LIVE}/${ME}.json`)).toEqual({
     sessionId: ME,
     activity: { text: 'Bash 빌드 끝날 때까지 대기', at: NOW },
-    agents: [{ id: 'x', description: '코드 현황 조사', activity: { text: 'Read view.tsx', at: NOW } }],
+    agents: [{ id: 'x', description: '코드 구조 조사', activity: { text: 'Read view.tsx', at: NOW } }],
   })
   const ui = await $.ui.mount({
     plugin: 'work-progress',
@@ -278,7 +278,7 @@ test('도구를 쓰면 최근 활동이 파일로 알려지고 업무 줄과 서
     props: { title: '업무 진행도', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   })
   expect(await ui.find({ type: 'Text', text: '최근: Bash 빌드 끝날 때까지 대기 · 방금' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '└ ● 코드 현황 조사 · 최근: Read view.tsx' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '└ ● 코드 구조 조사 · 최근: Read view.tsx' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -385,9 +385,9 @@ test('완료 업무는 제목 한 줄로 접혀 있다가, 누른 업무만 단�
 
 test('끝난 서브에이전트는 한 줄로 묶였다가 부모 업무를 펼치면 하나씩 보인다', async ($, on) => {
   world(on, {
-    [`${WORKS}/parent.json`]: work('parent', { title: '테마 빌더 명세', status: 'done', doneAt: NOW - HOUR }),
-    [`${WORKS}/s1.json`]: work('s1', { title: 'AI 빌더 조사', parentId: 'parent', status: 'done', doneAt: NOW - 2 * HOUR }),
-    [`${WORKS}/s2.json`]: work('s2', { title: '로우코드 조사', parentId: 'parent', status: 'done', doneAt: NOW - 2 * HOUR }),
+    [`${WORKS}/parent.json`]: work('parent', { title: '검색 기능 명세', status: 'done', doneAt: NOW - HOUR }),
+    [`${WORKS}/s1.json`]: work('s1', { title: 'UI 라이브러리 조사', parentId: 'parent', status: 'done', doneAt: NOW - 2 * HOUR }),
+    [`${WORKS}/s2.json`]: work('s2', { title: '상태 관리 조사', parentId: 'parent', status: 'done', doneAt: NOW - 2 * HOUR }),
   })
   await $.session.start(START)
   const ui = await $.ui.mount({
@@ -397,12 +397,12 @@ test('끝난 서브에이전트는 한 줄로 묶였다가 부모 업무를 펼�
     requestId: 'work-progress',
     props: { title: '업무 진행도', isFocused: true, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   })
-  expect(await ui.find({ type: 'Text', text: '▸ 테마 빌더 명세 · 서브 2 · 1시간 전' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /AI 빌더 조사/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 검색 기능 명세 · 서브 2 · 1시간 전' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /UI 라이브러리 조사/ })).toBeUndefined()
 
   await ui.press({ key: 'toggle-parent' })
-  expect(await ui.find({ type: 'Text', text: '└ ✓ AI 빌더 조사 1/2' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '└ ✓ 로우코드 조사 1/2' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '└ ✓ UI 라이브러리 조사 1/2' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '└ ✓ 상태 관리 조사 1/2' })).toBeDefined()
   await ui.unmount()
 })
 
