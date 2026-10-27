@@ -46,8 +46,8 @@ describe('기록', () => {
   test('남은 일은 보내지 않으면 그대로 두고, 빈 목록을 보내면 지운다', () => {
     const steps = [{ title: 'a', done: true, evidence: 'x' }]
     const closed = reported({ work_id: 'w', title: 't', steps, status: 'done', followups: ['push', ' '] }, null)
-    expect(closed.followups).toEqual(['push'])
-    expect(reported({ work_id: 'w', title: 't', steps, status: 'done' }, closed).followups).toEqual(['push'])
+    expect(closed.followups).toEqual([{ text: 'push' }])
+    expect(reported({ work_id: 'w', title: 't', steps, status: 'done' }, closed).followups).toEqual([{ text: 'push' }])
     expect(reported({ work_id: 'w', title: 't', steps, status: 'done', followups: [] }, closed).followups).toBeUndefined()
   })
 
@@ -63,7 +63,7 @@ describe('진행판', () => {
   test('남은 일이 있는 완료 업무는 하루가 지나도 남고, 하루 넘게 기록 없는 멈춤과 보류는 오래 멈춤으로 접는다', () => {
     const board = toBoard(
       [
-        work('left', { status: 'done', doneAt: NOW - 30 * HOUR, followups: ['push'] }),
+        work('left', { status: 'done', doneAt: NOW - 30 * HOUR, followups: [{ text: 'push' }] }),
         work('gone', { status: 'done', doneAt: NOW - 30 * HOUR }),
         work('old-pause', { status: 'paused', updatedAt: NOW - 30 * HOUR }),
         work('old-stall', { sessionId: 'z', updatedAt: NOW - 30 * HOUR }),
@@ -81,8 +81,8 @@ describe('진행판', () => {
   })
 
   test('시스템 안내에 남은 일이 있는 완료 업무를 따로 적는다', () => {
-    const board = toBoard([work('left', { status: 'done', doneAt: NOW, followups: ['push', '배포 확인'] })], [], NOW)
-    expect(guideText(board)).toContain('남은 일이 있는 완료 업무:\n- left · 업무 left · 남은 일: push, 배포 확인')
+    const board = toBoard([work('left', { status: 'done', doneAt: NOW, followups: [{ text: 'push' }, { text: '배포 확인' }] })], [], NOW)
+    expect(guideText(board)).toContain('남은 일이 있는 완료 업무:\n- left · 업무 left · 남은 일: push [기한 모름], 배포 확인 [기한 모름]')
   })
 })
 
@@ -173,7 +173,7 @@ test('보류 업무는 기다리는 이유를 보이고, 지금 할 일이 없�
 
 test('접어 둔 칸에서도 남은 일과 닫히지 않은 서브 기록은 보인다', async ($, on) => {
   world(on, {
-    [`${WORKS}/left.json`]: work('left', { status: 'done', doneAt: NOW - 30 * HOUR, followups: ['push', '배포 확인'] }),
+    [`${WORKS}/left.json`]: work('left', { status: 'done', doneAt: NOW - 30 * HOUR, followups: [{ text: 'push' }, { text: '배포 확인' }] }),
     [`${WORKS}/sleepy.json`]: work('sleepy', { status: 'paused', updatedAt: NOW - 30 * HOUR, waitingFor: '디자인 확정' }),
     [`${WORKS}/parent.json`]: work('parent', { status: 'done', doneAt: NOW - HOUR }),
     [`${WORKS}/sub-paused.json`]: work('sub-paused', { parentId: 'parent', status: 'paused', now: '대상 경로 저장만 남음' }),
@@ -184,9 +184,9 @@ test('접어 둔 칸에서도 남은 일과 닫히지 않은 서브 기록은 �
   expect(await ui.find({ type: 'Text', text: '업무 3개 · □ 남은 일 1 · ✓ 오늘 완료 1 · ◌ 오래 멈춤 1' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '진행 중인 업무가 없어요.' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '▸ 업무 left · 1일 전' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '□ push' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '□ push · 기한 모름' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '□ 배포 확인' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▸ 업무 sleepy · 1/2 · 1일 전' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 업무 sleepy · 기한 모름 · 1/2 · 1일 전' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '기다림: 디자인 확정' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '▸ 업무 parent · 서브 2 · 1시간 전' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '└ ‖ 업무 sub-paused 1/2 · 보류로 끝남 · 대상 경로 저장만 남음' })).toBeDefined()
@@ -208,7 +208,7 @@ describe('하루 요약', () => {
       [`${WORKS}/fin-sub.json`]: work('fin-sub', { parentId: 'fin', status: 'done', doneAt: NOW - 2 * HOUR }),
       [`${WORKS}/going.json`]: work('going', { now: '작성 중' }),
       [`${WORKS}/wait.json`]: work('wait', { status: 'paused', waitingFor: '디자인 확정' }),
-      [`${WORKS}/left.json`]: work('left', { status: 'done', doneAt: NOW - 30 * HOUR, followups: ['push'] }),
+      [`${WORKS}/left.json`]: work('left', { status: 'done', doneAt: NOW - 30 * HOUR, followups: [{ text: 'push' }] }),
       [`${WORKS}/stale.json`]: work('stale', { updatedAt: NOW - 30 * HOUR }),
     })
     await $.session.start(START)
@@ -222,8 +222,8 @@ describe('하루 요약', () => {
       [
         '업무 요약 · 최근 24시간',
         '완료 1\n- 업무 fin · 2단계 · 서브 1\n    ✓ 하나 — abc123',
-        '진행 중 2\n- 업무 going · 1/2 · 지금: 작성 중\n- 업무 wait · 1/2 · 보류 · 기다림: 디자인 확정',
-        '남은 일 1\n- 업무 left: push',
+        '진행 중 2\n- 업무 going · 1/2 · 기한 모름 · 지금: 작성 중\n- 업무 wait · 1/2 · 보류 · 기한 모름 · 기다림: 디자인 확정',
+        '남은 일 1\n- 업무 left: push(기한 모름)',
       ].join('\n\n'),
     )
   })

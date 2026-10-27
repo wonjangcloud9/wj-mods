@@ -38,12 +38,21 @@ export const agent = (id: string, description: string): LiveAgent => ({ id, desc
 
 export type Spawned = { id: string; description: string; status: AgentStatus }
 
-export function world(on: On, seed: Record<string, unknown> = {}, spawned: Spawned[] = []) {
+// host 의 now 는 지금 시각, offset 은 date +%z 가 내는 글자다. offset 이 null 이면 date 명령이 실패한다.
+export type Host = { now?: number; offset?: string | null }
+
+export function world(on: On, seed: Record<string, unknown> = {}, spawned: Spawned[] = [], host: Host = {}) {
   const files = new Map(Object.entries(seed).map(([path, value]) => [path, JSON.stringify(value)]))
-  mock.clock(on, { now: NOW })
+  const offset = host.offset === undefined ? '+0900' : host.offset
+  mock.clock(on, { now: host.now ?? NOW })
   mock.env(on, { HOME })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: ME }))
+  on('process.run', () =>
+    offset === null
+      ? { deny: 'no date' }
+      : { value: { exitCode: 0, stdout: `${offset}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } },
+  )
   on('agent.list', () => ({ value: spawned.map(agent => ({ ...agent, type: 'general-purpose' })) }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__work-progress__${e.name}` } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))

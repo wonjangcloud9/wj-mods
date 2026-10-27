@@ -21,6 +21,7 @@ import {
   unclosedChildren,
 } from './model'
 import { SUMMARY_ARGS, dailySummary } from './summary'
+import { readOffsetMin } from './timezone'
 import { densityOf, drawPane, drawSummary } from './view'
 
 const board = atom({ plugin: 'work-progress', key: 'board' } as const, null)
@@ -35,6 +36,9 @@ const COMMAND = 'progress'
 const TOOL = 'mcp__work-progress__report'
 const REFRESH_MS = 10_000
 const CLOCK_STEP_MS = 60_000
+
+// 기한까지 남은 날을 셀 때 쓰는 이 컴퓨터의 UTC 차이(분). 다시 불러올 때도 session.start 가 다시 읽는다.
+let offsetMin = 0
 
 // 다른 세션은 이 세션의 서브에이전트와 도구 사용을 볼 수 없으므로, 바뀔 때마다 파일로 알린다.
 async function publishLive($: EngineInterface): Promise<void> {
@@ -59,7 +63,7 @@ async function noteActivity($: EngineInterface, call: Record<string, unknown>): 
 async function refresh($: EngineInterface): Promise<void> {
   await publishLive($).catch(() => undefined)
   const [works, sessions, live, now] = await Promise.all([readWorks($), readSessions($), readLive($), $.clock.now()])
-  const next = toBoard(works, sessions, now, live)
+  const next = toBoard(works, sessions, now, live, offsetMin)
   await update($, board, prev => (prev && sameBoard(prev, next) && now - prev.at < CLOCK_STEP_MS ? prev : next))
 }
 
@@ -90,6 +94,7 @@ export const register: Register = on => {
       name: COMMAND,
       description: '모든 세션의 업무 진행도를 패널로 연다. /progress 요약 은 최근 24시간 업무를 글로 정리한다',
     })
+    offsetMin = await readOffsetMin($)
     await refresh($)
     // hot reload 때도 session.start 가 다시 오지만 이미 만든 안내는 그대로 둔다.
     const current = await read($, board)
@@ -132,7 +137,7 @@ export const register: Register = on => {
 
   on('command.run', { command: COMMAND }, async ($, e) => {
     if (SUMMARY_ARGS.includes(e.args.trim().toLowerCase())) {
-      return { text: dailySummary(await readWorks($), await $.clock.now()) }
+      return { text: dailySummary(await readWorks($), await $.clock.now(), offsetMin) }
     }
     await refresh($)
     const opened = await $.ui.open({ id: PANE, title: PANE_TITLE })

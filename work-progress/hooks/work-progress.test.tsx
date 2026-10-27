@@ -25,7 +25,8 @@ describe('기록', () => {
     )
     if ('error' in report) throw new Error(report.error)
     expect(report.work).toMatchObject({ id: 'model-select', status: 'active', sessionName: 'crispy-mandu', createdAt: NOW })
-    expect(report.notes).toEqual(['근거 없이 완료로 표시한 단계: a'])
+    expect(report.notes[0]).toBe('근거 없이 완료로 표시한 단계: a')
+    expect(report.notes[1]).toContain('이 업무의 기한을 몰라요.')
   })
 
   test('이어 쓰면 처음 시각을 지키고, 끝낸 시각은 처음 끝냈을 때만 정한다', () => {
@@ -63,17 +64,36 @@ describe('진행판', () => {
     expect(board.untracked.map(s => s.sessionId)).toEqual(['d'])
   })
 
-  test('하루 지난 완료 업무와 보관한 업무는 숨긴다', () => {
+  // NOW 는 서울 시각으로 2026-10-16(금) 12:00 이다.
+  test('오늘 오전 9시 전에 끝낸 완료 업무와 보관한 업무는 숨긴다', () => {
     const board = toBoard(
       [
         work('today', { status: 'done', doneAt: NOW - 2 * HOUR }),
-        work('old', { status: 'done', doneAt: NOW - 25 * HOUR }),
+        work('before-nine', { status: 'done', doneAt: NOW - 4 * HOUR }),
         work('kept', { status: 'archived' }),
       ],
       [],
       NOW,
+      new Map(),
+      540,
     )
     expect(board.rows.map(row => [row.work.id, row.phase])).toEqual([['today', 'done']])
+  })
+
+  test('오전 9시 전에는 전날 오전 9시 뒤에 끝낸 업무를 오늘 완료로 본다', () => {
+    const early = NOW - 4 * HOUR
+    const board = toBoard(
+      [
+        work('last-night', { status: 'done', doneAt: early - 2 * HOUR }),
+        work('yesterday-morning', { status: 'done', doneAt: early - 22 * HOUR }),
+        work('day-before', { status: 'done', doneAt: early - 24 * HOUR }),
+      ],
+      [],
+      early,
+      new Map(),
+      540,
+    )
+    expect(board.rows.map(row => row.work.id)).toEqual(['last-night', 'yesterday-morning'])
   })
 
   test('서브에이전트 기록은 부모 업무 아래 붙고, 서브에이전트가 도는 동안 부모는 작업 중이다', () => {
@@ -149,7 +169,7 @@ describe('진행판', () => {
   test('시스템 안내에는 끝나지 않은 업무만 id 와 함께 넣는다', () => {
     const board = toBoard([work('e2e18', { sessionId: 'a' }), work('fin', { status: 'done', doneAt: NOW })], [live('a', 'a', true)], NOW)
     const text = guideText(board)
-    expect(text).toContain('- e2e18 · 업무 e2e18 · 1/2 단계 · @shy-quokka · 1시간 전')
+    expect(text).toContain('- e2e18 · 업무 e2e18 · 1/2 단계 · 기한 모름 · @shy-quokka · 1시간 전')
     expect(text).not.toContain('fin')
     expect(guideText(null)).toContain('진행 중인 업무: 없음')
   })
@@ -169,7 +189,7 @@ test('도구로 기록하면 업무 파일이 생기고 입력창 위 한 줄에
     ],
     now: '#02 확인 중',
   })
-  expect(ran.result).toBe('기록함: E2E 18개 1/2 (active)')
+  expect(ran.result).toContain('기록함: E2E 18개 1/2 (active)\n이 업무의 기한을 몰라요.')
   expect(read(`${WORKS}/e2e18.json`)).toMatchObject({ sessionName: 'crispy-mandu', now: '#02 확인 중' })
 
   for (const surface of ['terminal', 'desktop'] as const) {

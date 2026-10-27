@@ -1,7 +1,22 @@
 import type { Elements, RenderSurface } from 'claude-code'
 
 import type { Board, ChildRow, Phase, Work, WorkRow } from '../types'
-import { PHASE_LABEL, PHASE_ORDER, ago, bar, countPhases, progressOf, span, stepSpans, stepStartedAt } from './model'
+import { dueView } from './due'
+import type { DueTone } from './due'
+import {
+  PHASE_LABEL,
+  PHASE_ORDER,
+  ago,
+  bar,
+  countDue,
+  countPhases,
+  dueOfFollowup,
+  isSubWork,
+  progressOf,
+  span,
+  stepSpans,
+  stepStartedAt,
+} from './model'
 import { remainingMs } from './pace'
 
 type Els = Elements[RenderSurface]
@@ -40,6 +55,14 @@ const HOUR_MS = 60 * MINUTE_MS
 const MARK = { open: '▾', closed: '▸' }
 // 덧붙이는 정보의 글자색. dimColor 는 어두운 배경에서 거의 안 보여서, 구분선 말고는 테마의 옅은 회색을 쓴다.
 const SOFT = 'subtle'
+// 기한 글자색. 지난 기한은 빨강, 사흘 안이나 모르는 기한은 노랑이다.
+const DUE_COLOR: Record<DueTone, string | undefined> = {
+  over: 'error',
+  soon: 'warning',
+  later: undefined,
+  none: SOFT,
+  missing: 'warning',
+}
 
 export function densityOf(columns: number): Density {
   if (columns >= 60) return 'wide'
@@ -96,6 +119,7 @@ export function drawSummary(els: Els, board: Board, density: Density, hasHint: b
   const counts = countPhases(board)
   const total = density === 'wide' ? `업무 ${board.rows.length}개` : `업무 ${board.rows.length}`
   const untracked = density === 'wide' && board.untracked.length > 0 ? `기록 없는 세션 ${board.untracked.length}` : ''
+  const due = density === 'tiny' ? { over: 0, today: 0 } : countDue(board)
   return (
     <Text wrap="truncate-end">
       <Text bold>{total}</Text>
@@ -105,6 +129,8 @@ export function drawSummary(els: Els, board: Board, density: Density, hasHint: b
           <Text color={PHASE_COLOR[phase]}>{phaseCount(phase, count, density)}</Text>
         </Text>
       ))}
+      {due.over > 0 ? <Text color={DUE_COLOR.over}>{` · 기한 지남 ${due.over}`}</Text> : ''}
+      {due.today > 0 ? <Text color={DUE_COLOR.soon}>{` · 기한 오늘 ${due.today}`}</Text> : ''}
       {untracked ? <Text color={SOFT}>{` · ${untracked}`}</Text> : ''}
       {hasHint && density !== 'tiny' ? <Text color={SOFT}>{'  /progress'}</Text> : ''}
     </Text>
@@ -196,17 +222,27 @@ function drawChildren(els: Els, row: WorkRow, isOpen: boolean, density: Density)
   )
 }
 
-function drawFollowups(els: Els, work: Work) {
+// 기한 글자. 넓으면 날짜까지, 아주 좁으면 남은 날만 보인다.
+function dueTail(due: string | undefined, now: number, offsetMin: number, density: Density) {
+  const view = dueView(due, now, offsetMin)
+  return { text: ` · ${density === 'tiny' ? view.short : view.text}`, color: DUE_COLOR[view.tone] }
+}
+
+function drawFollowups(els: Els, work: Work, now: number, offsetMin: number, density: Density) {
   const { Box, Text } = els
   if (!work.followups) return ''
   return (
     <Box marginLeft={INDENT} flexDirection="column">
-      {work.followups.map((item, index) => (
-        <Text wrap="truncate-end" key={`followup-${index}`}>
-          <Text color={PHASE_COLOR.followUp}>{PHASE_ICON.followUp}</Text>
-          {` ${item}`}
-        </Text>
-      ))}
+      {work.followups.map((item, index) => {
+        const due = dueTail(dueOfFollowup(item, work), now, offsetMin, density)
+        return (
+          <Text wrap="truncate-end" key={`followup-${index}`}>
+            <Text color={PHASE_COLOR.followUp}>{PHASE_ICON.followUp}</Text>
+            {` ${item.text}`}
+            <Text color={due.color}>{due.text}</Text>
+          </Text>
+        )
+      })}
     </Box>
   )
 }
@@ -336,28 +372,31 @@ function etaText(row: WorkRow, now: number): string {
 type RowActions = { onToggle: (id: string) => void; onArchive: (id: string) => void }
 
 // 완료·남은 일·오래 멈춤 칸의 업무는 제목 한 줄로 접는다. 남은 일과 닫히지 않은 서브 기록은 접어도 보인다.
-function drawFolded(els: Els, row: WorkRow, now: number, columns: number, actions: RowActions) {
+// 완료·남은 일 칸의 업무는 끝났으므로 업무 기한을 보이지 않는다. 남은 일은 줄마다 기한을 보인다.
+function drawFolded(els: Els, row: WorkRow, now: number, offsetMin: number, columns: number, actions: RowActions) {
   const { Box, Button, Text } = els
   const { work, phase } = row
   const density = densityOf(columns)
   const unclosed = row.finished.filter(isLeftOpen)
   const { done, total } = progressOf(work)
+  const due = phase === 'dormant' && !isSubWork(work) ? dueTail(work.due, now, offsetMin, density) : undefined
   const parts = [
     ...(phase === 'dormant' ? [`${done}/${total}`] : []),
     ...(row.finished.length > 0 ? [`서브 ${row.finished.length}`] : []),
     ago(work.doneAt ?? work.updatedAt, now),
   ]
   const tail = density === 'tiny' ? '' : ` · ${parts.join(' · ')}`
-  const title = fit(work.title, Math.max(4, columns - INDENT - widthOf(tail)))
+  const title = fit(work.title, Math.max(4, columns - INDENT - widthOf(`${due?.text ?? ''}${tail}`)))
   return (
     <Box flexDirection="column" key={`row-${work.id}`}>
       <Button key={`toggle-${work.id}`} plain onPress={() => actions.onToggle(work.id)}>
         <Text wrap="truncate-end">
           <Text color={SOFT}>{MARK.closed}</Text> <Text color={phase === 'followUp' ? undefined : SOFT}>{title}</Text>
+          {due ? <Text color={due.color}>{due.text}</Text> : ''}
           <Text color={SOFT}>{tail}</Text>
         </Text>
       </Button>
-      {phase === 'followUp' ? drawFollowups(els, work) : ''}
+      {phase === 'followUp' ? drawFollowups(els, work, now, offsetMin, density) : ''}
       {phase === 'dormant' && work.waitingFor && density !== 'tiny' ? (
         <Box marginLeft={INDENT}>
           {drawLabeled(els, '기다림: ', work.waitingFor)}
@@ -376,13 +415,16 @@ function drawFolded(els: Els, row: WorkRow, now: number, columns: number, action
   )
 }
 
-function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, columns: number, actions: RowActions) {
+// 아직 끝나지 않은 업무는 제목 옆에 기한을 보인다. 서브에이전트 기록은 부모 업무의 기한을 따른다.
+function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, offsetMin: number, columns: number, actions: RowActions) {
   const { Box, Button, Text } = els
   const { work, phase } = row
-  if (FOLDED.includes(phase) && !isOpen) return drawFolded(els, row, now, columns, actions)
+  if (FOLDED.includes(phase) && !isOpen) return drawFolded(els, row, now, offsetMin, columns, actions)
   const density = densityOf(columns)
   const { done, total } = progressOf(work)
-  const title = fit(work.title, Math.max(4, columns - INDENT))
+  const isFinished = phase === 'done' || phase === 'followUp'
+  const due = isFinished || isSubWork(work) ? undefined : dueTail(work.due, now, offsetMin, density)
+  const title = fit(work.title, Math.max(4, columns - INDENT - widthOf(due?.text ?? '')))
   const slow = density === 'tiny' ? '' : slowStep(row, now)
   const eta = density === 'tiny' ? '' : etaText(row, now)
   const detail = detailOf(row)
@@ -396,6 +438,7 @@ function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, columns: 
       <Button key={`toggle-${work.id}`} plain onPress={() => actions.onToggle(work.id)}>
         <Text wrap="truncate-end">
           <Text color={SOFT}>{isOpen ? MARK.open : MARK.closed}</Text> <Text bold>{title}</Text>
+          {due ? <Text color={due.color}>{due.text}</Text> : ''}
         </Text>
       </Button>
       <Box marginLeft={INDENT}>
@@ -433,7 +476,7 @@ function drawRow(els: Els, row: WorkRow, isOpen: boolean, now: number, columns: 
       ) : (
         ''
       )}
-      {isOpen ? drawFollowups(els, work) : ''}
+      {isOpen ? drawFollowups(els, work, now, offsetMin, density) : ''}
       {isOpen ? (
         <Box marginLeft={INDENT}>
           <Button key={`archive-${work.id}`} label="보관" onPress={() => actions.onArchive(work.id)} />
@@ -453,7 +496,7 @@ export function drawPane(els: Els, board: Board | null, expanded: string | null,
     return <Text color={SOFT}>기록된 업무가 없어요.</Text>
   }
 
-  const draw = (row: WorkRow) => drawRow(els, row, expanded === row.work.id, board.at, columns, actions)
+  const draw = (row: WorkRow) => drawRow(els, row, expanded === row.work.id, board.at, board.offsetMin, columns, actions)
   const groups = PHASE_ORDER.map(phase => ({ phase, rows: board.rows.filter(row => row.phase === phase) })).filter(
     group => group.rows.length > 0,
   )

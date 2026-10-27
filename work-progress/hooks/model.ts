@@ -2,6 +2,7 @@ import type {
   Activity,
   Board,
   ChildRow,
+  Followup,
   LiveAgent,
   LiveSession,
   Phase,
@@ -11,7 +12,9 @@ import type {
   WorkRow,
   WorkStatus,
 } from '../types'
+import { dueView, readDue, toDue } from './due'
 import { paceOf } from './pace'
+import { workdayStart } from './workday'
 
 export { stepSpans, stepStartedAt } from './pace'
 
@@ -41,10 +44,20 @@ function toSteps(value: unknown): Step[] {
   return Array.isArray(value) ? value.flatMap(item => toStep(item) ?? []) : []
 }
 
-function toLines(value: unknown): string[] | undefined {
+// 예전 기록의 남은 일은 글자만 있다.
+function toFollowup(value: unknown): Followup | null {
+  if (typeof value === 'string') return text(value) ? { text: value.trim() } : null
+  const { text: line, due } = (value ?? {}) as Record<string, unknown>
+  const said = text(line)
+  if (!said) return null
+  const when = toDue(due)
+  return when ? { text: said, due: when } : { text: said }
+}
+
+function toFollowups(value: unknown): Followup[] | undefined {
   if (!Array.isArray(value)) return undefined
-  const lines = value.flatMap(item => text(item) ?? [])
-  return lines.length > 0 ? lines : undefined
+  const items = value.flatMap(item => toFollowup(item) ?? [])
+  return items.length > 0 ? items : undefined
 }
 
 export function toWork(value: unknown): Work | null {
@@ -62,7 +75,8 @@ export function toWork(value: unknown): Work | null {
     now: text(v.now),
     question: text(v.question),
     waitingFor: text(v.waitingFor),
-    followups: toLines(v.followups),
+    due: toDue(v.due),
+    followups: toFollowups(v.followups),
     status,
     sessionId,
     sessionName: text(v.sessionName) ?? sessionId.slice(0, 8),
@@ -182,6 +196,12 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
   const steps = toSteps(input.steps)
   if (steps.length === 0) return { error: 'steps 에 전체 단계 목록을 한 개 이상 보내 주세요.' }
 
+  // 기한과 남은 일은 보내지 않으면 이전 값을 그대로 둔다.
+  const due = 'due' in input ? readDue(input.due) : { due: previous?.due }
+  if ('error' in due) return { error: due.error }
+  const followups = 'followups' in input ? readFollowups(input.followups, previous?.followups) : { items: previous?.followups }
+  if ('error' in followups) return { error: followups.error }
+
   const asked = input.status as WorkStatus
   const status = REPORTED_STATUS.includes(asked) ? asked : 'active'
   const isNewlyDone = status === 'done' && previous?.status !== 'done'
@@ -194,8 +214,8 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
     now: text(input.now),
     question: text(input.question),
     waitingFor: text(input.waiting_for),
-    // 남은 일은 잊히지 않도록, 보내지 않으면 이전 목록을 그대로 둔다.
-    followups: 'followups' in input ? toLines(input.followups) : previous?.followups,
+    due: due.due,
+    followups: followups.items,
     status,
     sessionId: by.sessionId,
     sessionName: by.sessionName,
@@ -207,7 +227,40 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
   }
   const unproven = steps.filter(step => step.isDone && !step.evidence).map(step => step.title)
   const notes = unproven.length > 0 ? [`근거 없이 완료로 표시한 단계: ${unproven.join(', ')}`] : []
-  return { work, notes }
+  return { work, notes: [...notes, ...dueNotes(work, previous, by, 'followups' in input)] }
+}
+
+// 모델이 보낸 남은 일. 기한을 빼고 다시 보내도 같은 일의 이전 기한을 이어 둔다.
+function readFollowups(value: unknown, previous: Followup[] | undefined): { items: Followup[] | undefined } | { error: string } {
+  if (!Array.isArray(value)) return { items: undefined }
+  const items: Followup[] = []
+  for (const item of value) {
+    const fields = (typeof item === 'object' && item !== null ? item : { text: item }) as Record<string, unknown>
+    const said = text(fields.text)
+    if (!said) continue
+    const read = 'due' in fields ? readDue(fields.due) : { due: previous?.find(old => old.text === said)?.due }
+    if ('error' in read) return { error: `남은 일 "${said}": ${read.error}` }
+    items.push(read.due ? { text: said, due: read.due } : { text: said })
+  }
+  return { items: items.length > 0 ? items : undefined }
+}
+
+const DUE_ASK = '이 업무의 기한을 몰라요. 사용자가 말한 기한이 없으면 이번 답변 끝에 한 번 묻고, 답을 받으면 due 로 다시 기록하세요.'
+
+// 기한을 모르는 업무와 남은 일을 모델에게 알린다. 업무는 새로 열었거나 다른 세션에서 이어 받았을 때만 알려 매번 묻지 않게 한다.
+function dueNotes(work: Work, previous: Work | null, by: Reporter, hasFollowups: boolean): string[] {
+  if (by.agentId || isSubWork(work)) return []
+  const isFresh = previous === null || previous.sessionId !== by.sessionId
+  const asks = work.status !== 'done' && work.due === undefined && isFresh ? [DUE_ASK] : []
+  const unknown = hasFollowups ? (work.followups ?? []).filter(item => dueOfFollowup(item, work) === undefined) : []
+  if (unknown.length === 0) return asks
+  const lines = unknown.map(item => item.text).join(', ')
+  return [...asks, `기한을 모르는 남은 일: ${lines}. 사용자에게 기한을 물어 followups 의 due 로 기록하세요.`]
+}
+
+// 남은 일에 기한이 없으면 업무 기한을 따른다.
+export function dueOfFollowup(item: Followup, work: Work): string | undefined {
+  return item.due ?? work.due
 }
 
 // 단계를 처음 완료로 표시한 시각을 남긴다. 이전 기록에서 같은 이름, 없으면 같은 자리의 단계를 이어 본다.
@@ -251,10 +304,10 @@ export function progressOf(work: Work): { done: number; total: number; percent: 
   return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) }
 }
 
-// 완료 업무는 하루 뒤 숨기지만, 남은 일이 있으면 그 일을 끝내거나 보관할 때까지 남긴다.
-function isVisible(work: Work, now: number): boolean {
+// 완료 업무는 오늘 오전 9시 뒤에 끝낸 것만 보이지만, 남은 일이 있으면 그 일을 끝내거나 보관할 때까지 남긴다.
+function isVisible(work: Work, since: number): boolean {
   if (work.status === 'archived') return false
-  if (work.status === 'done') return Boolean(work.followups) || now - (work.doneAt ?? work.updatedAt) < DAY_MS
+  if (work.status === 'done') return Boolean(work.followups) || (work.doneAt ?? work.updatedAt) >= since
   return true
 }
 
@@ -307,6 +360,7 @@ export function toBoard(
   sessions: LiveSession[],
   now: number,
   live: Map<string, SessionLive> = new Map(),
+  offsetMin = 0,
 ): Board {
   const bySession = new Map(sessions.map(s => [s.sessionId, s]))
   // 끝난 세션이 남긴 상태는 믿지 않는다.
@@ -322,9 +376,10 @@ export function toBoard(
   }
   // 한 세션이 업무를 여러 개 열어 두었으면 메인 대화가 가장 최근에 기록한 진행 중 업무만 그 세션의 현재 업무로 본다.
   const latest = new Map([...parents].filter(([, work]) => work.status === 'active'))
+  const since = workdayStart(now, offsetMin)
 
   const mainRows: WorkRow[] = works
-    .filter(work => !isSubWork(work) && isVisible(work, now))
+    .filter(work => !isSubWork(work) && isVisible(work, since))
     .map(work => {
       const isCurrent = latest.get(work.sessionId)?.id === work.id
       const isParent = parents.get(work.sessionId)?.id === work.id
@@ -368,7 +423,7 @@ export function toBoard(
     rows.filter(row => row.phase === 'running' || row.phase === 'yourTurn').map(row => row.work.sessionId),
   )
   const untracked = sessions.filter(s => !tracked.has(s.sessionId))
-  return { rows, untracked, at: now }
+  return { rows, untracked, at: now, offsetMin }
 }
 
 export const PHASE_LABEL: Record<Phase, string> = {
@@ -385,6 +440,20 @@ export function countPhases(board: Board): { phase: Phase; count: number }[] {
   return PHASE_ORDER.map(phase => ({ phase, count: board.rows.filter(row => row.phase === phase).length })).filter(
     item => item.count > 0,
   )
+}
+
+// 기한이 지난 일과 오늘까지인 일의 개수. 끝난 업무는 남은 일만 세고, 서브에이전트 기록은 세지 않는다.
+export function countDue(board: Board): { over: number; today: number } {
+  const dues = board.rows.flatMap(({ work, phase }) => {
+    if (isSubWork(work) || phase === 'done') return []
+    if (phase === 'followUp') return (work.followups ?? []).map(item => dueOfFollowup(item, work))
+    return [work.due]
+  })
+  const views = dues.map(due => dueView(due, board.at, board.offsetMin))
+  return {
+    over: views.filter(view => view.tone === 'over').length,
+    today: views.filter(view => view.tone !== 'over' && view.days === 0).length,
+  }
 }
 
 export function bar(percent: number, width: number): { filled: string; rest: string } {
@@ -446,11 +515,23 @@ export const TOOL_SCHEMA = {
     now: { type: 'string', description: '지금 하는 일 한 줄' },
     question: { type: 'string', description: '사용자 답을 기다리는 질문 한 줄. 없으면 생략.' },
     waiting_for: { type: 'string', description: '보류한 이유나 기다리는 조건 한 줄. 예: 디자인 확정 뒤 구현' },
+    due: {
+      type: 'string',
+      description:
+        "업무 기한. '2026-10-30' 이나 '2026-10-30 18:00' 처럼 사용자 시간대로 적는다. 기한이 없다고 들었으면 '없음'. 보내지 않으면 이전 값을 그대로 둔다.",
+    },
     followups: {
       type: 'array',
-      items: { type: 'string' },
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: '남은 일 한 줄' },
+          due: { type: 'string', description: '이 일의 기한. 형식은 due 와 같다. 업무 기한과 같으면 생략한다.' },
+        },
+        required: ['text'],
+      },
       description:
-        '완료한 뒤에도 이 업무 밖에서 할 일. 예: push, 배포 확인. 보내지 않으면 이전 목록을 그대로 두고, 다 끝냈으면 빈 목록을 보낸다.',
+        '완료한 뒤에도 남길 일. 사용자가 남겨 두라고 한 일만 적는다. 보내지 않으면 이전 목록을 그대로 두고, 다 끝냈으면 빈 목록을 보낸다.',
     },
     status: { type: 'string', enum: ['active', 'paused', 'done'], description: '기본은 active' },
   },
@@ -463,12 +544,16 @@ const GUIDE = `# 업무 진행 기록
 - 단계를 끝냈을 때, 계획이 바뀌어 단계가 늘거나 줄 때, 사용자 답을 기다리며 턴을 끝내기 직전, 업무가 끝났을 때 다시 기록한다.
 - 단계 완료는 근거가 있을 때만 표시하고 evidence 에 짧게 적는다.
 - 보류로 기록할 때는 기다리는 이유를 waiting_for 에 적는다.
-- 완료로 닫을 때 push, 배포 확인처럼 이 업무 밖에서 할 일이 남으면 followups 에 적는다. 남은 일을 끝내면 그 일을 뺀 목록으로 다시 기록한다.
+- 업무마다 기한을 due 에 적는다. 사용자가 말했거나 티켓·문서에 적힌 기한을 쓴다. 모르면 그 업무를 시작하거나 이어 갈 때 사용자에게 한 번 묻고, 답을 받으면 다시 기록한다. 기한이 없다고 하면 '없음'으로 적는다.
+- 완료로 닫기 전에 push 여부와 코드 상태를 확인한다. 빈 곳이 있으면 답변에 한 줄로 알리고, 사용자가 시킨 대로 닫는다.
+- followups 에는 사용자가 남겨 두라고 한 일만 적는다. 남은 일이 있으면 완료 업무가 화면에 계속 남기 때문이다. 남은 일을 끝내면 그 일을 뺀 목록으로 다시 기록한다. 남은 일마다 기한을 due 에 적고, 업무 기한과 같으면 생략한다.
 - 이전 세션에서 하던 업무를 이어 가면 아래 목록의 work_id 를 그대로 쓴다.
 - 서브에이전트로 일할 때는 부모 대화의 work_id 를 쓰지 않고 맡은 일만 새 work_id 로 기록한다. 부모 업무 아래 한 줄로 보인다.`
 
 // 시스템 안내가 바뀌면 대화 전체의 prompt cache 가 깨지므로 세션 시작 때 한 번만 만든다.
 export function guideText(board: Board | null): string {
+  const now = board?.at ?? 0
+  const dueOf = (due: string | undefined) => dueView(due, now, board?.offsetMin ?? 0).text
   const rows = (board?.rows ?? []).filter(row => !isSubWork(row.work))
   const open = rows.filter(row => row.phase !== 'done' && row.phase !== 'followUp')
   const left = rows.filter(row => row.phase === 'followUp')
@@ -478,14 +563,17 @@ export function guideText(board: Board | null): string {
       : `세션 시작 때 진행 중이던 업무:\n${open
           .map(({ work }) => {
             const { done, total } = progressOf(work)
-            return `- ${work.id} · ${work.title} · ${done}/${total} 단계 · @${work.sessionName} · ${ago(work.updatedAt, board?.at ?? work.updatedAt)}`
+            return `- ${work.id} · ${work.title} · ${done}/${total} 단계 · ${dueOf(work.due)} · @${work.sessionName} · ${ago(work.updatedAt, board?.at ?? work.updatedAt)}`
           })
           .join('\n')}`
   const leftText =
     left.length === 0
       ? ''
       : `\n\n남은 일이 있는 완료 업무:\n${left
-          .map(({ work }) => `- ${work.id} · ${work.title} · 남은 일: ${(work.followups ?? []).join(', ')}`)
+          .map(({ work }) => {
+            const items = (work.followups ?? []).map(item => `${item.text} [${dueOf(dueOfFollowup(item, work))}]`)
+            return `- ${work.id} · ${work.title} · 남은 일: ${items.join(', ')}`
+          })
           .join('\n')}`
   return `${GUIDE}\n\n${openText}${leftText}`
 }

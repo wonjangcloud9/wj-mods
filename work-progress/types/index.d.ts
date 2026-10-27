@@ -3,6 +3,10 @@ export type Step = { title: string; isDone: boolean; evidence?: string; doneAt?:
 
 export type WorkStatus = 'active' | 'paused' | 'done' | 'archived'
 
+// 기한은 '2026-10-30' 이나 '2026-10-30 18:00' 처럼 사용자 시간대로 적은 글자다. 기한이 없다고 들었으면 '없음'이다.
+// 남은 일에 기한이 없으면 업무 기한을 따른다.
+export type Followup = { text: string; due?: string }
+
 // 업무 하나가 파일 하나다. 여러 세션이 이어 쓰므로 마지막으로 기록한 세션만 남긴다.
 export type Work = {
   id: string
@@ -12,8 +16,10 @@ export type Work = {
   question?: string
   // 보류한 이유나 기다리는 조건. 예: 디자인 확정 뒤 구현
   waitingFor?: string
+  // 업무 기한. 모르면 없다.
+  due?: string
   // 완료한 뒤에도 이 업무 밖에서 해야 할 일. 예: push, 배포 확인
-  followups?: string[]
+  followups?: Followup[]
   status: WorkStatus
   sessionId: string
   sessionName: string
@@ -63,7 +69,8 @@ export type WorkRow = {
   paceMs?: number
 }
 
-export type Board = { rows: WorkRow[]; untracked: LiveSession[]; at: number }
+// offsetMin 은 이 컴퓨터의 UTC 차이(분)다. 기한까지 남은 날을 셀 때 쓴다.
+export type Board = { rows: WorkRow[]; untracked: LiveSession[]; at: number; offsetMin: number }
 
 declare module 'claude-code' {
   interface PluginState {
