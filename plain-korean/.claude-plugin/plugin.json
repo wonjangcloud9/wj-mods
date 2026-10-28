@@ -1,7 +1,7 @@
 {
   "name": "plain-korean",
-  "version": "0.1.1",
-  "description": "쉬운 한국어 답변 스타일, 영어로 새는 답변 경고, 가독성 mod 3개, claude-warm 테마를 한 번에 설치한다",
+  "version": "0.2.0",
+  "description": "결론부터 쓰고 흐름은 글자 그림으로 보여 주는 해요체 한국어 답변 스타일, 영어로 새는 답변 경고, 가독성 mod 3개, claude-warm 테마를 한 번에 설치한다",
   "author": {
     "name": "wonjangcloud9"
   },

@@ -23,6 +23,7 @@ import {
   toReport,
   unclosedChildren,
 } from './model'
+import { laterRow, reportRow } from './row'
 import { SUMMARY_ARGS, dailySummary } from './summary'
 import { readOffsetMin } from './timezone'
 import { densityOf, drawPane, drawSummary } from './view'
@@ -41,6 +42,16 @@ const TOOL = 'mcp__work-progress__report'
 const LATER_TOOL = new RegExp(`^mcp__work-progress__${LATER_TOOL_NAME}$`)
 const REFRESH_MS = 10_000
 const CLOCK_STEP_MS = 60_000
+
+function isRecordTool(tool: string): boolean {
+  return tool === TOOL || LATER_TOOL.test(tool)
+}
+
+function rowOf(tool: string, input: unknown): string | undefined {
+  if (tool === TOOL) return reportRow(input)
+  if (LATER_TOOL.test(tool)) return laterRow(input)
+  return undefined
+}
 
 // 기한까지 남은 날을 셀 때 쓰는 이 컴퓨터의 UTC 차이(분). 다시 불러올 때도 session.start 가 다시 읽는다.
 let offsetMin = 0
@@ -211,6 +222,29 @@ export const register: Register = on => {
       onArchive: id => void archive($, id),
       onCloseLater: (id, status) => void closeLater($, id, status),
     })
+  })
+
+  // 기록 도구 호출은 한 줄로 그린다. ctrl+o 로 펼치면 보낸 값과 결과를 그대로 보여 준다.
+  on('ui.render', { component: 'ToolUse' }, ($, e, next) => {
+    const row = rowOf(e.props.tool, e.props.input)
+    if (row === undefined || e.props.isExpanded) return next(e)
+    const { Text } = $.ui.resolve(e)
+    // 도는 동안은 흐리게, 끝나면 성공과 실패 색으로 점을 찍는다.
+    const dot = e.props.isRunning
+      ? { dimColor: true }
+      : { color: e.props.isErrored || e.props.isInterrupted ? 'error' : 'success' }
+    return (
+      <Text wrap="truncate-end">
+        <Text {...dot}>●</Text> {row}
+      </Text>
+    )
+  })
+
+  // 결과 글은 모델이 읽는 안내라서 줄에서는 숨기고, 실패했을 때만 그대로 보여 준다.
+  on('ui.render', { component: 'ToolResult' }, ($, e, next) => {
+    if (!isRecordTool(e.props.tool) || e.props.isExpanded || e.props.isErrored) return next(e)
+    const { Box } = $.ui.resolve(e)
+    return <Box />
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
