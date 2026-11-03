@@ -11,6 +11,8 @@ Claude Code 화면과 알림을 바꾸는 mod 모음이에요. 필요한 것만 
 | `usage-band` | 입력창 위 오른쪽에 5시간·주간 사용량과 Claude status 를 한 줄로 보여 줘요. |
 | `long-turn-notify` | 2분 넘게 걸린 작업이 끝나거나 선택 창·권한 확인 창이 뜨면 맥 알림과 음성으로 알려 줘요. macOS 전용이에요. |
 | `session-nickname` | 새 세션에 랜덤 이름을 붙여 `@이름` 으로 SendMessage 할 수 있게 해요. 이름은 첫 프롬프트 때 세션 목록에 붙어요. |
+
+`work-progress`, `long-turn-notify`, `session-nickname` 은 Team·Enterprise 계정용 `-team` 판이 따로 있어요. [개인 계정과 팀 계정](#개인-계정과-팀-계정)을 봐 주세요.
 | `turn-divider` | 내가 보낸 질문 위에 구분선을 그어 질문과 답의 경계를 보이게 해요. |
 | `plain-summary` | 보고서처럼 긴 답변 아래에 작은 모델이 쓴 두 줄 요약을 붙여요. |
 | `compact-tool-rows` | Bash 실행 줄의 긴 명령을 첫 줄 앞부분만 보이게 줄여요. |
@@ -59,12 +61,34 @@ git clone https://github.com/wonjangcloud9/wj-mods.git ~/wj-mods
 
 이 방식은 `git pull` 로 받은 변경이 바로 반영되고, 열려 있는 세션에서도 hot reload 를 켜면 다시 불러와요.
 
+## 개인 계정과 팀 계정
+
+mod 세 개는 개인 계정(Pro, Max 등)용과 Team·Enterprise 계정용으로 나뉘어 있어요. 팀용은 이름 끝에 `-team` 이 붙어요. 로그인한 계정에 맞는 쪽을 설치하면 되고, 나머지 mod 는 두 계정에서 똑같이 돌아요.
+
+Team·Enterprise 계정에서는 Claude Code 가 내장 보안 플러그인을 사용자 mod 보다 먼저 불러와요. 이 플러그인은 classic 훅(설정 파일 방식 훅)과 `prompt.compose` 를 사용자 mod 에 넘기지 않는데, 세 mod 의 개인용은 이 이벤트로 일해요. 그래서 팀 계정에서 개인용을 깔면 오류 없이 불러와지지만, 그 이벤트에 기대는 기능이 조용히 빠져요. `session-nickname` 은 이름을 못 붙이고, `long-turn-notify` 는 선택 창 알림만 울리고, `work-progress` 는 패널은 보이지만 모델이 진행도를 기록하지 않아요.
+
+| 개인 계정 | Team·Enterprise 계정 | `-team` 판이 대신 쓰는 방법 |
+|---|---|---|
+| `session-nickname` | `session-nickname-team` | `/rename <이름>` 을 직접 실행해요. 그래서 세션 목록 이름도 바뀌지만, 대화에 "Session renamed to" 줄이 하나 남아요. |
+| `long-turn-notify` | `long-turn-notify-team` | 작업 시간은 `turn.start`, `turn.complete` 로 재요. 권한 확인 창은 1.5초마다 `~/.claude/sessions/` 의 이 세션 기록을 읽어 알아내서, 알림에 어떤 도구의 권한인지는 안 나와요. |
+| `work-progress` | `work-progress-team` | 기록 안내를 시스템 프롬프트에 넣지 않고, 대화의 첫 프롬프트에 숨은 context 로 한 번 붙여요. compact 한 뒤에는 다시 붙여요. 서브에이전트는 도구 설명에 든 한 줄 규칙만 받아요. |
+
+회사나 조직이 준 계정으로 로그인했다면 `-team` 판을 쓰면 돼요. Team 계정이면 Claude Code 시작 화면의 모델 이름 옆에 `Claude Team` 이 보여요.
+
+```sh
+claude plugin install session-nickname-team@wj-mods
+claude plugin install long-turn-notify-team@wj-mods
+claude plugin install work-progress-team@wj-mods
+```
+
+같은 mod 는 한쪽만 설치해 주세요. `work-progress` 는 두 판 모두 `/progress` 를 등록하고, 나머지 둘도 두 판을 같이 깔면 이름을 두 번 붙이거나 알림이 두 번 울려요. 바꿀 때는 쓰던 판을 지운 뒤 다른 판을 설치하면 돼요. 두 판은 같은 곳(`~/.claude/work-progress/`, `~/.claude/long-turn-notify/sounds/`)에 파일을 두기 때문에, 기록과 녹음해 둔 음성은 그대로 이어져요.
+
 ## 참고
 
 - `long-turn-notify` 는 처음 알릴 때 맥 `say` 의 Yuna 음성으로 알림 문장을 녹음해 `~/.claude/long-turn-notify/sounds/` 에 둬요. Yuna 음성이 없으면 소리 없이 알림만 떠요.
 - `work-progress` 는 업무 기록을 `~/.claude/work-progress/` 에 남겨요. 이 기록은 내 컴퓨터 안에서만 쓰고 밖으로 보내지 않아요.
 - `plain-summary` 는 긴 답변마다 작은 모델을 한 번 불러요. 그만큼 사용량에 들어가요.
-- Claude Code 2.1.301 에서 확인했어요.
+- Claude Code 2.1.301 에서 확인했어요. `-team` 판은 Team 계정의 2.1.316 에서 확인했어요.
 - 테스트는 `claude plugin test <mod 폴더>` 로 돌려요.
 
 ## 라이선스

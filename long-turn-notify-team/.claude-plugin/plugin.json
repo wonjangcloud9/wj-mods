@@ -1,0 +1,8 @@
+{
+  "name": "long-turn-notify-team",
+  "version": "0.3.0",
+  "description": "2분 넘게 걸린 작업이 끝나거나 선택 창·권한 확인 창이 뜨면 맥 알림과 세션 이름 음성으로 알려 준다. 조직 계정에서도 권한 확인 창을 세션 기록으로 알아낸다 Team·Enterprise 계정용이다.",
+  "author": {
+    "name": "wonjangcloud9"
+  }
+}

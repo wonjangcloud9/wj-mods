@@ -1,0 +1,9 @@
+{
+  "name": "session-nickname-team",
+  "version": "0.3.0",
+  "description": "새 세션에 재밌는 랜덤 이름을 /rename 으로 붙여 @이름 으로 SendMessage 할 수 있게 한다 Team·Enterprise 계정용이다.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "wonjangcloud9"
+  }
+}

@@ -13,6 +13,8 @@ The UI text, notifications and summaries are written in Korean.
 | `usage-band` | Shows 5-hour and weekly usage and the Claude status page state in one line above the prompt. |
 | `long-turn-notify` | Sends a macOS notification and plays a voice line when a turn ran longer than 2 minutes, or when a question or permission prompt is waiting. macOS only. |
 | `session-nickname` | Gives each new session a random name so other sessions can address it with SendMessage. The name reaches the session list with the first prompt. |
+
+`work-progress`, `long-turn-notify` and `session-nickname` also come as `-team` versions for Team and Enterprise accounts. See [Personal and Team accounts](#personal-and-team-accounts).
 | `turn-divider` | Draws a divider above each of your prompts to separate questions from answers. |
 | `plain-summary` | Adds a two-sentence plain-language summary under long, report-style answers, written by a small model. |
 | `compact-tool-rows` | Shortens long Bash commands in tool rows to the start of the first line. |
@@ -84,9 +86,31 @@ git clone https://github.com/wonjangcloud9/wj-mods.git ~/wj-mods
 }
 ```
 
+## Personal and Team accounts
+
+Three mods come in two versions: one for personal accounts (Pro, Max and the like) and one for Team and Enterprise accounts, named with `-team`. Install the one that matches the account you sign in with. Every other mod works on both.
+
+On Team and Enterprise accounts, Claude Code loads a built-in security plugin ahead of user mods. That plugin does not pass classic hooks (the settings-file kind) or `prompt.compose` on to them, and the personal versions of these three mods depend on those events. On a Team or Enterprise account they load without errors, but the parts that need those events quietly stop: `session-nickname` names nothing, `long-turn-notify` only alerts on question prompts, and `work-progress` shows its pane but the model is never told to record progress.
+
+| Personal account | Team and Enterprise account | What the `-team` version does instead |
+|---|---|---|
+| `session-nickname` | `session-nickname-team` | Runs `/rename <name>` itself, so the name also reaches the session list. This leaves a "Session renamed to" line in the conversation. |
+| `long-turn-notify` | `long-turn-notify-team` | Times work with `turn.start` and `turn.complete`. It spots a permission prompt by reading this session's record in `~/.claude/sessions/` every 1.5 seconds, so the notification does not name the tool. |
+| `work-progress` | `work-progress-team` | Attaches its recording guide once, as hidden context on the first prompt of a conversation, instead of a system prompt section. It attaches the guide again after compaction. Subagents get only a one-line rule in the tool description. |
+
+If you signed in with an account your organization gave you, use the `-team` versions. On a Team account the start screen of Claude Code shows `Claude Team` next to the model.
+
+```sh
+claude plugin install session-nickname-team@wj-mods
+claude plugin install long-turn-notify-team@wj-mods
+claude plugin install work-progress-team@wj-mods
+```
+
+Install only one version of each mod. Both versions of `work-progress` register `/progress`, and both versions of the other two would name a session or notify twice. To switch, uninstall one version before installing the other. Both versions keep their files in the same place (`~/.claude/work-progress/`, `~/.claude/long-turn-notify/sounds/`), so records and recorded voice lines carry over.
+
 ## Notes
 
-- Tested with Claude Code 2.1.301.
+- Tested with Claude Code 2.1.301. The `-team` versions were tested with 2.1.316 on a Team account.
 - `long-turn-notify` records its voice lines with the macOS `say` Yuna voice on first use and keeps them in `~/.claude/long-turn-notify/sounds/`. Without that voice it shows the notification silently.
 - `plain-summary` calls a small model once per long answer, which counts toward your usage.
 - `work-progress` keeps its records in `~/.claude/work-progress/` on your machine.
