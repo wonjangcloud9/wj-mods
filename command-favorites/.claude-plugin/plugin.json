@@ -1,0 +1,1 @@
+{ "name": "command-favorites", "version": "0.2.0", "description": "레포마다 즐겨찾는 슬래시 명령을 입력창 위 사용률 줄 왼쪽에 버튼으로 둔다. 누르면 쓰던 글 끝에 명령을 붙이고, /fav 로 넣고 뺀다", "types": "./types/index.d.ts" }

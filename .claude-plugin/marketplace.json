@@ -6,6 +6,12 @@
   "description": "한국어로 일하는 Claude Code 사용자를 위한 화면·알림·세션 관리 mod 모음",
   "plugins": [
     {
+      "name": "command-favorites",
+      "source": "./command-favorites",
+      "description": "레포마다 즐겨찾는 슬래시 명령을 입력창 위에 버튼으로 둔다. 누르면 실행하지 않고 쓰던 글 끝에 한 칸 띄워 붙인다. /fav 로 넣고 뺀다",
+      "version": "0.2.0"
+    },
+    {
       "name": "compact-tool-rows",
       "source": "./compact-tool-rows",
       "description": "Bash 실행 줄의 긴 명령을 첫 줄 앞부분만 보이게 줄인다",
