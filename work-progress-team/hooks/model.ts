@@ -23,7 +23,7 @@ export { stepSpans, stepStartedAt } from './pace'
 const DAY_MS = 24 * 60 * 60_000
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
 export const PHASE_ORDER: Phase[] = ['yourTurn', 'running', 'stalled', 'paused', 'followUp', 'done', 'dormant']
-const REPORTED_STATUS: WorkStatus[] = ['active', 'paused', 'done']
+const AUTO_CLOSED_NOTE = '모든 단계가 끝나 완료로 닫았어요. 할 일이 더 있으면 끝나지 않은 단계를 넣어 다시 기록하세요.'
 const ACTIVE_AGENT = ['pending', 'running', 'waiting']
 const ACTIVITY_LENGTH = 80
 export const MAIN_LOOP = 'main'
@@ -82,8 +82,10 @@ export function toWork(value: unknown): Work | null {
     status,
     sessionId,
     sessionName: text(v.sessionName) ?? sessionId.slice(0, 8),
+    repo: text(v.repo),
     agentId: text(v.agentId),
     parentId: text(v.parentId),
+    endedBy: v.endedBy === 'agent-end' ? 'agent-end' : undefined,
     createdAt: typeof v.createdAt === 'number' ? v.createdAt : v.updatedAt,
     updatedAt: v.updatedAt,
     doneAt: typeof v.doneAt === 'number' ? v.doneAt : undefined,
@@ -92,10 +94,11 @@ export function toWork(value: unknown): Work | null {
 
 // ~/.claude/sessions/<pid>.json 은 엔진이 살아 있는 세션마다 남기는 기록이다.
 export function toLiveSession(value: unknown): LiveSession | null {
-  const { sessionId, name, status } = (value ?? {}) as Record<string, unknown>
+  const { sessionId, name, status, cwd } = (value ?? {}) as Record<string, unknown>
   const id = text(sessionId)
   if (!id) return null
-  return { sessionId: id, name: text(name) ?? id.slice(0, 8), isBusy: status === 'busy' }
+  const folder = text(cwd)
+  return { sessionId: id, name: text(name) ?? id.slice(0, 8), isBusy: status === 'busy', ...(folder ? { cwd: folder } : {}) }
 }
 
 function baseName(path: unknown): string | undefined {
@@ -187,8 +190,15 @@ export function toId(value: unknown): string | undefined {
   return ID_PATTERN.test(id) ? id : undefined
 }
 
-export type Reporter = { sessionId: string; sessionName: string; agentId?: string; parentId?: string; at: number }
+export type Reporter = { sessionId: string; sessionName: string; repo?: string; agentId?: string; parentId?: string; at: number }
 export type Report = { work: Work; notes: string[] } | { error: string }
+
+// 단계를 다 끝내고도 완료를 보내지 않은 채 끝나는 세션이 있어서, 기다리는 것이 없으면 완료로 닫는다.
+// 보류와 완료는 보낸 그대로 둔다.
+function statusOf(asked: unknown, steps: Step[], isWaiting: boolean): WorkStatus {
+  if (asked === 'done' || asked === 'paused') return asked
+  return steps.every(step => step.isDone) && !isWaiting ? 'done' : 'active'
+}
 
 export function toReport(input: Record<string, unknown>, previous: Work | null, by: Reporter): Report {
   const id = toId(input.work_id)
@@ -204,8 +214,10 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
   const followups = 'followups' in input ? readFollowups(input.followups, previous?.followups) : { items: previous?.followups }
   if ('error' in followups) return { error: followups.error }
 
-  const asked = input.status as WorkStatus
-  const status = REPORTED_STATUS.includes(asked) ? asked : 'active'
+  const question = text(input.question)
+  const waitingFor = text(input.waiting_for)
+  const status = statusOf(input.status, steps, Boolean(question || waitingFor))
+  const isAutoClosed = status === 'done' && input.status !== 'done'
   const isNewlyDone = status === 'done' && previous?.status !== 'done'
   // 메인 대화가 서브에이전트의 기록을 대신 닫아도 부모 업무 아래에 그대로 둔다.
   const keepsSub = !by.agentId && previous !== null && isSubWork(previous)
@@ -214,13 +226,14 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
     title,
     steps: timeSteps(steps, previous, by.at),
     now: text(input.now),
-    question: text(input.question),
-    waitingFor: text(input.waiting_for),
+    question,
+    waitingFor,
     due: due.due,
     followups: followups.items,
     status,
     sessionId: by.sessionId,
     sessionName: by.sessionName,
+    repo: by.repo ?? previous?.repo,
     agentId: by.agentId ?? (keepsSub ? previous.agentId : undefined),
     parentId: by.agentId ? previous?.parentId ?? by.parentId : keepsSub ? previous.parentId : undefined,
     createdAt: previous?.createdAt ?? by.at,
@@ -228,8 +241,11 @@ export function toReport(input: Record<string, unknown>, previous: Work | null, 
     doneAt: status === 'done' ? (isNewlyDone ? by.at : previous?.doneAt ?? by.at) : undefined,
   }
   const unproven = steps.filter(step => step.isDone && !step.evidence).map(step => step.title)
-  const notes = unproven.length > 0 ? [`근거 없이 완료로 표시한 단계: ${unproven.join(', ')}`] : []
-  return { work, notes: [...notes, ...dueNotes(work, previous, by, 'followups' in input)] }
+  const notes = [
+    ...(unproven.length > 0 ? [`근거 없이 완료로 표시한 단계: ${unproven.join(', ')}`] : []),
+    ...(isAutoClosed ? [AUTO_CLOSED_NOTE] : []),
+  ]
+  return { work, notes }
 }
 
 // 모델이 보낸 남은 일. 기한을 빼고 다시 보내도 같은 일의 이전 기한을 이어 둔다.
@@ -245,19 +261,6 @@ function readFollowups(value: unknown, previous: Followup[] | undefined): { item
     items.push(read.due ? { text: said, due: read.due } : { text: said })
   }
   return { items: items.length > 0 ? items : undefined }
-}
-
-const DUE_ASK = '이 업무의 기한을 몰라요. 사용자가 말한 기한이 없으면 이번 답변 끝에 한 번 묻고, 답을 받으면 due 로 다시 기록하세요.'
-
-// 기한을 모르는 업무와 남은 일을 모델에게 알린다. 업무는 새로 열었거나 다른 세션에서 이어 받았을 때만 알려 매번 묻지 않게 한다.
-function dueNotes(work: Work, previous: Work | null, by: Reporter, hasFollowups: boolean): string[] {
-  if (by.agentId || isSubWork(work)) return []
-  const isFresh = previous === null || previous.sessionId !== by.sessionId
-  const asks = work.status !== 'done' && work.due === undefined && isFresh ? [DUE_ASK] : []
-  const unknown = hasFollowups ? (work.followups ?? []).filter(item => dueOfFollowup(item, work) === undefined) : []
-  if (unknown.length === 0) return asks
-  const lines = unknown.map(item => item.text).join(', ')
-  return [...asks, `기한을 모르는 남은 일: ${lines}. 사용자에게 기한을 물어 followups 의 due 로 기록하세요.`]
 }
 
 // 남은 일에 기한이 없으면 업무 기한을 따른다.
@@ -284,6 +287,43 @@ export function unclosedChildren(works: Work[], parentId: string, running: Set<s
       (work.status === 'active' || work.status === 'paused') &&
       !(work.agentId && running.has(work.agentId)),
   )
+}
+
+export type AgentEnd = { agentId: string; reason: 'answer' | 'aborted' | 'refusal' | 'error'; answer: string; at: number }
+
+const ANSWER_HEAD_MAX = 60
+
+// 보고의 첫 줄. 마크다운 머리 기호를 떼고 길면 자른다.
+function headOf(answer: string): string | undefined {
+  const line = answer
+    .split('\n')
+    .map(row => row.replace(/^[#>*\-\s]+/, '').replace(/\*\*/g, '').trim())
+    .find(row => row.length > 0)
+  if (!line) return undefined
+  return line.length > ANSWER_HEAD_MAX ? `${line.slice(0, ANSWER_HEAD_MAX)}…` : line
+}
+
+// 서브에이전트가 끝났는데 자기 기록을 닫지 않았으면 대신 닫는다. 답하고 끝났으면 완료, 중단·오류면 보류로 둔다.
+// 사용자 답을 기다리는 질문이 있는 기록은 그대로 둔다. 단계 표시는 바꾸지 않는다.
+export function closeOnAgentEnd(works: Work[], end: AgentEnd): Work[] {
+  return works
+    .filter(work => work.agentId === end.agentId && (work.status === 'active' || work.status === 'paused') && !work.question)
+    .map(work => {
+      if (end.reason === 'answer') {
+        const head = headOf(end.answer)
+        return {
+          ...work,
+          status: 'done' as const,
+          waitingFor: undefined,
+          now: head ? `끝난 보고: ${head}` : work.now,
+          endedBy: 'agent-end' as const,
+          updatedAt: end.at,
+          doneAt: end.at,
+        }
+      }
+      const why = end.reason === 'aborted' ? '서브에이전트가 중단됨' : '서브에이전트가 오류로 끝남'
+      return { ...work, status: 'paused' as const, waitingFor: why, endedBy: 'agent-end' as const, updatedAt: end.at }
+    })
 }
 
 export function closingNote(open: Work[]): string[] {
@@ -327,7 +367,15 @@ function childOf(agent: LiveAgent, record: Work | undefined): ChildRow {
 function finishedOf(record: Work): ChildRow {
   const { done, total } = progressOf(record)
   const reason = record.waitingFor ?? record.now
-  return { id: record.id, title: record.title, done, total, status: record.status, ...(reason ? { now: reason } : {}) }
+  return {
+    id: record.id,
+    title: record.title,
+    done,
+    total,
+    status: record.status,
+    ...(reason ? { now: reason } : {}),
+    ...(record.endedBy ? { isAutoClosed: true } : {}),
+  }
 }
 
 export function isSubWork(work: Work): boolean {
@@ -523,7 +571,7 @@ export const TOOL_SCHEMA = {
     due: {
       type: 'string',
       description:
-        "업무 기한. '2026-10-30' 이나 '2026-10-30 18:00' 처럼 사용자 시간대로 적는다. 기한이 없다고 들었으면 '없음'. 보내지 않으면 이전 값을 그대로 둔다.",
+        "업무 기한. '2026-10-30' 이나 '2026-10-30 18:00' 처럼 사용자 시간대로 적는다. 사용자가 기한을 말하지 않았으면 보내지 않는다. 보내지 않으면 이전 값을 그대로 두고, 처음부터 없으면 기한 없음으로 본다.",
     },
     followups: {
       type: 'array',
@@ -536,9 +584,13 @@ export const TOOL_SCHEMA = {
         required: ['text'],
       },
       description:
-        '완료한 뒤에도 남길 일. 사용자가 남겨 두라고 한 일만 적는다. 보내지 않으면 이전 목록을 그대로 두고, 다 끝냈으면 빈 목록을 보낸다.',
+        '완료한 뒤에도 남길 일. 사용자가 남겨 두라고 직접 말한 일만 적는다. 배포 뒤 확인이나 다음 회차 확인은 적지 않는다. 보내지 않으면 이전 목록을 그대로 두고, 다 끝냈으면 빈 목록을 보낸다.',
     },
-    status: { type: 'string', enum: ['active', 'paused', 'done'], description: '기본은 active' },
+    status: {
+      type: 'string',
+      enum: ['active', 'paused', 'done'],
+      description: '기본은 active. 모든 단계가 끝났고 question 과 waiting_for 가 없으면 보내지 않아도 완료로 닫힌다.',
+    },
   },
   required: ['work_id', 'title', 'steps'],
 }
@@ -549,12 +601,16 @@ const GUIDE = `# 업무 진행 기록
 - 단계를 끝냈을 때, 계획이 바뀌어 단계가 늘거나 줄 때, 사용자 답을 기다리며 턴을 끝내기 직전, 업무가 끝났을 때 다시 기록한다.
 - 단계 완료는 근거가 있을 때만 표시하고 evidence 에 짧게 적는다.
 - 보류로 기록할 때는 기다리는 이유를 waiting_for 에 적는다.
-- 업무마다 기한을 due 에 적는다. 사용자가 말했거나 티켓·문서에 적힌 기한을 쓴다. 모르면 그 업무를 시작하거나 이어 갈 때 사용자에게 한 번 묻고, 답을 받으면 다시 기록한다. 기한이 없다고 하면 '없음'으로 적는다.
+- 기한은 사용자가 말했거나 티켓·문서에 적힌 것만 due 에 적는다. 따로 말하지 않았으면 기한이 없는 업무로 보고, 사용자에게 기한을 묻지 않는다.
 - 완료로 닫기 전에 push 여부와 코드 상태를 확인한다. 빈 곳이 있으면 답변에 한 줄로 알리고, 사용자가 시킨 대로 닫는다.
-- followups 에는 사용자가 남겨 두라고 한 일만 적는다. 남은 일이 있으면 완료 업무가 화면에 계속 남기 때문이다. 남은 일을 끝내면 그 일을 뺀 목록으로 다시 기록한다. 남은 일마다 기한을 due 에 적고, 업무 기한과 같으면 생략한다.
-- 이번에는 하지 않고 다른 날이나 다른 브랜치에서 할 일은 \`mcp__work-progress-team__${LATER_TOOL_NAME}\` 의 add 로 남긴다. 사용자가 나중에 하자고 한 일, 업무를 마치며 남는 위험이나 다음에 할 일로 답변에 적은 일이 여기에 든다. 그 일이 나온 업무의 work_id 와 묶을 주제(topic)를 같이 적는다. 이미 있는 주제에 드는 일이면 아래 목록의 주제 이름을 그대로 쓴다. 그 업무를 마무리하는 데 남은 push·배포 확인은 followups 다.
+- 모든 단계가 끝났고 question 과 waiting_for 가 없는 기록은 status 를 보내지 않아도 완료로 닫힌다. 할 일이 더 있으면 끝나지 않은 단계로 넣는다. 사용자 지시를 기다리는 커밋·push 도 끝나지 않은 단계로 두고 waiting_for 에 적는다.
+- followups 에는 사용자가 남겨 두라고 직접 말한 일만 적는다. 남은 일이 있으면 완료 업무가 화면에 계속 남기 때문이다. 배포 뒤 확인, 다음 회차 확인처럼 이 세션에서 끝낼 수 없는 확인은 followups 에 적지 않고 답변에 한 줄로 알린다. 남은 일을 끝내면 그 일을 뺀 목록으로 다시 기록한다. 남은 일의 기한도 사용자가 말했을 때만 due 에 적는다.
+- \`mcp__work-progress-team__${LATER_TOOL_NAME}\` 의 add 에는 사용자가 나중에 하자고 직접 말한 일만 남긴다. 그 일이 나온 업무의 work_id 와 묶을 주제(topic)를 같이 적는다. 이미 있는 주제에 드는 일이면 아래 목록의 주제 이름을 그대로 쓴다. 답변에 적은 남는 위험, 다음에 할 일, 결정할 것, 배포 뒤 확인은 남기지 않는다. 이슈 표나 티켓처럼 다른 곳에서 관리하는 일도 남기지 않는다.
 - 나중에 할 일을 끝내면 done, 하지 않기로 하면 drop 에 id 를 보내 닫는다.
-- 이전 세션에서 하던 업무를 이어 가면 아래 목록의 work_id 를 그대로 쓴다.
+- 이전 세션에서 하던 업무를 이어 가면 아래 목록의 work_id 를 그대로 쓴다. 이어 가기 시작한 첫 턴에 바로 다시 기록해야 이 세션에 붙는다. 기록하지 않으면 화면에는 옛 세션 이름이 남고 이 세션은 기록 없는 세션으로 보인다.
+- 새 work_id 로 처음 기록할 때 같은 레포에 제목이 비슷한 진행 중 업무가 있으면, 그 기록은 거절되고 비슷한 업무 목록이 온다. 같은 일이면 그 work_id 로 기록하고, 다른 일이면 같은 내용을 한 번 더 보낸다.
+- 아래 목록의 업무가 이미 끝난 것을 확인하면 그 work_id 로 status done 을 기록한다. 커밋이 반영됐거나 사용자가 끝났다고 한 경우다. 하지 않은 단계는 완료로 바꾸지 않고 evidence 에 하지 않은 이유를 적는다.
+- 남은 일이 있는 완료 업무의 남은 일을 하기 시작하면, 그 work_id 로 status 는 active, 남은 일은 끝나지 않은 단계로 넣어 다시 기록한다. 끝나면 done 과 그 일을 뺀 followups 로 닫는다.
 - 서브에이전트로 일할 때는 부모 대화의 work_id 를 쓰지 않고 맡은 일만 새 work_id 로 기록한다. 부모 업무 아래 한 줄로 보인다.`
 
 // 세션 시작 때 한 번 만들어 대화의 첫 프롬프트에 붙인다. compact 뒤에는 그때 목록으로 다시 만든다.

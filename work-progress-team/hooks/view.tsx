@@ -20,6 +20,7 @@ import {
   stepStartedAt,
 } from './model'
 import { remainingMs } from './pace'
+import { repoName, repoSections } from './repo'
 
 type Els = Elements[RenderSurface]
 
@@ -226,6 +227,7 @@ function drawChildren(els: Els, row: WorkRow, isOpen: boolean, density: Density)
             <Text color={PHASE_COLOR.done}>{PHASE_ICON.done}</Text>
             {` ${child.title}`}
             {child.total ? ` ${child.done}/${child.total}` : ''}
+            {child.isAutoClosed ? ' · 끝날 때 자동으로 닫음' : ''}
           </Text>
         ))
       ) : closed.length > 0 ? (
@@ -600,14 +602,28 @@ function drawLater(els: Els, board: Board, expanded: string | null, columns: num
   )
 }
 
+// 레포 섹션 위에 긋는 굵은 선. 이 세션의 레포에는 표시를 붙인다.
+function drawRepoHeader(els: Els, repo: string, isHere: boolean, part: Board, columns: number) {
+  const { Text } = els
+  const density = densityOf(columns)
+  const name = repo ? repoName(repo) : '레포 모름'
+  const count = density === 'tiny' ? `${part.rows.length}` : `업무 ${part.rows.length}${part.later.length > 0 ? ` · 나중에 ${part.later.length}` : ''}`
+  const label = `${name}${isHere && density !== 'tiny' ? ' (이 세션)' : ''} · ${count}`
+  const head = `━━ ${label} `
+  return (
+    <Text wrap="truncate-end" key={`repo-head-${repo}`}>
+      <Text color={isHere ? 'claude' : undefined} bold>
+        {head}
+      </Text>
+      <Text dimColor>{'━'.repeat(Math.max(2, columns - widthOf(head)))}</Text>
+    </Text>
+  )
+}
+
 // 할 일이 남은 칸을 위에, 접어 두는 칸을 아래에 둔다. 칸마다 이름과 개수를 적은 선을 긋는다.
-export function drawPane(els: Els, board: Board | null, expanded: string | null, columns: number, actions: RowActions) {
+function drawSection(els: Els, board: Board, expanded: string | null, columns: number, actions: RowActions, isSplit: boolean) {
   const { Box, Text } = els
   const density = densityOf(columns)
-  if (!board || (board.rows.length === 0 && board.untracked.length === 0 && board.later.length === 0)) {
-    return <Text color={SOFT}>기록된 업무가 없어요.</Text>
-  }
-
   const draw = (row: WorkRow) => drawRow(els, row, expanded === row.work.id, board.at, board.offsetMin, columns, actions)
   const groups = PHASE_ORDER.map(phase => ({ phase, rows: board.rows.filter(row => row.phase === phase) })).filter(
     group => group.rows.length > 0,
@@ -617,8 +633,7 @@ export function drawPane(els: Els, board: Board | null, expanded: string | null,
   const untracked = board.untracked.map(s => `@${s.name}${s.isBusy ? ' 작업 중' : ''}`).join(', ')
   return (
     <Box flexDirection="column" rowGap={1}>
-      {drawSummary(els, board, density, false)}
-      {open.length === 0 ? <Text color={SOFT}>진행 중인 업무가 없어요.</Text> : ''}
+      {open.length === 0 && !isSplit ? <Text color={SOFT}>진행 중인 업무가 없어요.</Text> : ''}
       {open.map(({ phase, rows }) => (
         <Box flexDirection="column" key={`group-${phase}`}>
           {drawHeader(els, phase, rows.length, columns)}
@@ -633,6 +648,28 @@ export function drawPane(els: Els, board: Board | null, expanded: string | null,
         <Box flexDirection="column" key={`group-${phase}`}>
           {drawHeader(els, phase, rows.length, columns)}
           {rows.map(draw)}
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+// 모든 레포의 업무를 한 패널에 보이되, 레포가 둘 이상이면 레포마다 섹션을 나눈다. 이 세션의 레포가 맨 위다.
+export function drawPane(els: Els, board: Board | null, expanded: string | null, columns: number, actions: RowActions) {
+  const { Box, Text } = els
+  const density = densityOf(columns)
+  if (!board || (board.rows.length === 0 && board.untracked.length === 0 && board.later.length === 0)) {
+    return <Text color={SOFT}>기록된 업무가 없어요.</Text>
+  }
+  const sections = repoSections(board)
+  const isSplit = sections.length > 1
+  return (
+    <Box flexDirection="column" rowGap={1}>
+      {drawSummary(els, board, density, false)}
+      {sections.map(({ repo, board: part }) => (
+        <Box flexDirection="column" rowGap={1} key={`repo-${repo}`}>
+          {isSplit ? drawRepoHeader(els, repo, repo === board.repo, part, columns) : ''}
+          {drawSection(els, part, expanded, columns, actions, isSplit)}
         </Box>
       ))}
       {density === 'wide' ? <Text color={SOFT}>업무 줄을 누르면 단계 목록이 펼쳐져요.</Text> : ''}

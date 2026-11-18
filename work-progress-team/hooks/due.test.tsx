@@ -41,7 +41,7 @@ describe('남은 일정', () => {
     expect(view('2026-10-17')).toMatchObject({ text: '기한 내일', tone: 'soon' })
     expect(view('2026-10-16')).toMatchObject({ text: '기한 오늘', tone: 'soon', days: 0 })
     expect(view('2026-10-14')).toMatchObject({ text: '기한 10/14(수) · 2일 지남', short: '2일 지남', tone: 'over' })
-    expect(view(undefined)).toMatchObject({ text: '기한 모름', tone: 'missing' })
+    expect(view(undefined)).toMatchObject({ text: '기한 없음', tone: 'none' })
     expect(view('없음')).toMatchObject({ text: '기한 없음', tone: 'none' })
   })
 
@@ -77,21 +77,11 @@ describe('기한 기록', () => {
     expect('error' in wrong && wrong.error).toContain('남은 일 "push"')
   })
 
-  test('기한을 모르면 새 업무와 다른 세션에서 이어 받은 업무에서만 묻게 한다', () => {
-    const ask = (report: ReturnType<typeof reported>) => report.notes.some(note => note.includes('기한을 몰라요'))
+  test('기한을 적지 않아도 묻지 않는다', () => {
     const first = reported({})
-    expect(ask(first)).toBe(true)
-    expect(ask(reported({}, first.work))).toBe(false)
-    expect(ask(reported({}, { ...first.work, sessionId: 'other' }))).toBe(true)
-    expect(ask(reported({ due: '없음' }))).toBe(false)
-    const sub = toReport({ work_id: 'w', title: 't', steps }, null, { ...by, agentId: 'x', parentId: 'p' })
-    expect('notes' in sub && sub.notes).toEqual([])
-  })
-
-  test('기한을 모르는 남은 일을 알려 주고, 업무 기한이 있으면 그 기한을 따른다', () => {
-    const left = reported({ status: 'done', followups: [{ text: 'push' }] }).notes
-    expect(left).toContain('기한을 모르는 남은 일: push. 사용자에게 기한을 물어 followups 의 due 로 기록하세요.')
-    expect(reported({ status: 'done', due: '2026-10-20', followups: [{ text: 'push' }] }).notes).toEqual([])
+    expect(first.notes).toEqual([])
+    expect(reported({}, { ...first.work, sessionId: 'other' }).notes).toEqual([])
+    expect(reported({ status: 'done', followups: [{ text: 'push' }] }).notes).toEqual([])
   })
 
   test('예전 기록의 글자뿐인 남은 일도 읽는다', () => {

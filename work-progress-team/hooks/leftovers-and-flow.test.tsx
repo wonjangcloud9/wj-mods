@@ -82,7 +82,7 @@ describe('진행판', () => {
 
   test('시스템 안내에 남은 일이 있는 완료 업무를 따로 적는다', () => {
     const board = toBoard([work('left', { status: 'done', doneAt: NOW, followups: [{ text: 'push' }, { text: '배포 확인' }] })], [], NOW)
-    expect(guideText(board)).toContain('남은 일이 있는 완료 업무:\n- left · 업무 left · 남은 일: push [기한 모름], 배포 확인 [기한 모름]')
+    expect(guideText(board)).toContain('남은 일이 있는 완료 업무:\n- left · 업무 left · 남은 일: push [기한 없음], 배포 확인 [기한 없음]')
   })
 })
 
@@ -184,9 +184,9 @@ test('접어 둔 칸에서도 남은 일과 닫히지 않은 서브 기록은 �
   expect(await ui.find({ type: 'Text', text: '업무 3개 · □ 남은 일 1 · ✓ 오늘 완료 1 · ◌ 오래 멈춤 1' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '진행 중인 업무가 없어요.' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '▸ 업무 left · 1일 전' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '□ push · 기한 모름' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '□ push · 기한 없음' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '□ 배포 확인' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▸ 업무 sleepy · 기한 모름 · 1/2 · 1일 전' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ 업무 sleepy · 기한 없음 · 1/2 · 1일 전' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '기다림: 디자인 확정' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '▸ 업무 parent · 서브 2 · 1시간 전' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '└ ‖ 업무 sub-paused 1/2 · 보류로 끝남 · 결과 파일 저장만 남음' })).toBeDefined()
@@ -222,8 +222,8 @@ describe('하루 요약', () => {
       [
         '업무 요약 · 최근 24시간',
         '완료 1\n- 업무 fin · 2단계 · 서브 1\n    ✓ 하나 — abc123',
-        '진행 중 2\n- 업무 going · 1/2 · 기한 모름 · 지금: 작성 중\n- 업무 wait · 1/2 · 보류 · 기한 모름 · 기다림: 디자인 확정',
-        '남은 일 1\n- 업무 left: push(기한 모름)',
+        '진행 중 2\n- 업무 going · 1/2 · 기한 없음 · 지금: 작성 중\n- 업무 wait · 1/2 · 보류 · 기한 없음 · 기다림: 디자인 확정',
+        '남은 일 1\n- 업무 left: push(기한 없음)',
       ].join('\n\n'),
     )
   })

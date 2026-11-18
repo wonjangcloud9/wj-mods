@@ -26,7 +26,6 @@ describe('기록', () => {
     if ('error' in report) throw new Error(report.error)
     expect(report.work).toMatchObject({ id: 'alert-settings', status: 'active', sessionName: 'crispy-mandu', createdAt: NOW })
     expect(report.notes[0]).toBe('근거 없이 완료로 표시한 단계: a')
-    expect(report.notes[1]).toContain('이 업무의 기한을 몰라요.')
   })
 
   test('이어 쓰면 처음 시각을 지키고, 끝낸 시각은 처음 끝냈을 때만 정한다', () => {
@@ -169,7 +168,7 @@ describe('진행판', () => {
   test('시스템 안내에는 끝나지 않은 업무만 id 와 함께 넣는다', () => {
     const board = toBoard([work('checkout-e2e', { sessionId: 'a' }), work('fin', { status: 'done', doneAt: NOW })], [live('a', 'a', true)], NOW)
     const text = guideText(board)
-    expect(text).toContain('- checkout-e2e · 업무 checkout-e2e · 1/2 단계 · 기한 모름 · @shy-quokka · 1시간 전')
+    expect(text).toContain('- checkout-e2e · 업무 checkout-e2e · 1/2 단계 · 기한 없음 · @shy-quokka · 1시간 전')
     expect(text).not.toContain('fin')
     expect(guideText(null)).toContain('진행 중인 업무: 없음')
   })
@@ -189,7 +188,7 @@ test('도구로 기록하면 업무 파일이 생기고 입력창 위 한 줄에
     ],
     now: '#02 확인 중',
   })
-  expect(ran.result).toContain('기록함: 결제 E2E 1/2 (active)\n이 업무의 기한을 몰라요.')
+  expect(ran.result).toContain('기록함: 결제 E2E 1/2 (active)')
   expect(read(`${WORKS}/checkout-e2e.json`)).toMatchObject({ sessionName: 'crispy-mandu', now: '#02 확인 중' })
 
   for (const surface of ['terminal', 'desktop'] as const) {

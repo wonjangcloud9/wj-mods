@@ -12,7 +12,7 @@ const DUE_PATTERN = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?$/
 
 export const DUE_FORMAT_ERROR = "기한은 '2026-10-30' 이나 '2026-10-30 18:00' 처럼 적어 주세요. 기한이 없다고 들었으면 '없음'으로 적어요."
 
-// over: 기한 지남, soon: 사흘 안, later: 그 뒤, none: 기한이 없다고 들음, missing: 기한을 모름
+// over: 기한 지남, soon: 사흘 안, later: 그 뒤, none: 기한이 없음(적지 않은 기한도 없음으로 본다), missing: 적힌 기한을 읽지 못함
 export type DueTone = 'over' | 'soon' | 'later' | 'none' | 'missing'
 // text 는 넓은 화면, short 는 아주 좁은 화면에 쓴다. days 는 기한 날까지 남은 날 수이고, 기한을 모르면 없다.
 export type DueView = { text: string; short: string; tone: DueTone; days?: number }
@@ -81,8 +81,8 @@ function hoursText(ms: number): string {
 
 // 기한을 "기한 10/30(금) · 4일 남음" 처럼 보인다. offsetMin 은 UTC 와의 차이(분)다.
 export function dueView(due: string | undefined, now: number, offsetMin: number): DueView {
-  if (due === undefined) return { text: '기한 모름', short: '기한 모름', tone: 'missing' }
-  if (due === NO_DUE) return { text: '기한 없음', short: '기한 없음', tone: 'none' }
+  // 사용자가 기한을 따로 말하지 않았으면 기한이 없는 업무로 본다.
+  if (due === undefined || due === NO_DUE) return { text: '기한 없음', short: '기한 없음', tone: 'none' }
   const parsed = parse(due)
   if (!parsed) return { text: '기한 모름', short: '기한 모름', tone: 'missing' }
 

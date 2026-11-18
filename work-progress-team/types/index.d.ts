@@ -23,16 +23,21 @@ export type Work = {
   status: WorkStatus
   sessionId: string
   sessionName: string
+  // 마지막으로 기록한 세션의 레포 경로. worktree 는 본 레포 경로로 묶는다. 예전 기록에는 없다.
+  repo?: string
   // 서브에이전트가 기록했으면 그 서브에이전트 id. 메인 대화의 기록에는 없다.
   agentId?: string
   // 서브에이전트의 기록이면, 기록할 때 그 세션이 하던 메인 업무의 id. 끝난 뒤에도 부모 아래에 묶는다.
   parentId?: string
+  // 서브에이전트가 기록을 닫지 않고 끝나 mod 가 대신 닫았으면 'agent-end'. 모델이 다시 기록하면 지운다.
+  endedBy?: 'agent-end'
   createdAt: number
   updatedAt: number
   doneAt?: number
 }
 
-export type LiveSession = { sessionId: string; name: string; isBusy: boolean }
+// cwd 는 엔진이 남긴 세션 작업 폴더, repo 는 그 폴더가 속한 레포 경로다.
+export type LiveSession = { sessionId: string; name: string; isBusy: boolean; cwd?: string; repo?: string }
 
 // 마지막으로 쓴 도구를 사람이 읽는 한 줄로 바꾼 것
 export type Activity = { text: string; at: number }
@@ -52,6 +57,7 @@ export type ChildRow = {
   activity?: Activity
   status?: WorkStatus
   now?: string
+  isAutoClosed?: boolean
 }
 
 // running: 세션이 일하는 중, yourTurn: 세션이 사용자 입력을 기다림, stalled: 세션이 없거나 다른 업무로 넘어감
@@ -82,12 +88,22 @@ export type LaterItem = {
   workTitle?: string
   status: LaterStatus
   sessionName: string
+  // 남긴 세션의 레포 경로. 예전 기록에는 없다.
+  repo?: string
   createdAt: number
   updatedAt: number
 }
 
 // offsetMin 은 이 컴퓨터의 UTC 차이(분)다. 기한까지 남은 날을 셀 때 쓴다. later 는 아직 하지 않은 나중에 할 일이다.
-export type Board = { rows: WorkRow[]; untracked: LiveSession[]; later: LaterItem[]; at: number; offsetMin: number }
+// repo 는 이 세션의 레포 경로다. 패널은 레포마다 섹션을 나누고 이 레포를 맨 위에 둔다.
+export type Board = {
+  rows: WorkRow[]
+  untracked: LiveSession[]
+  later: LaterItem[]
+  at: number
+  offsetMin: number
+  repo?: string
+}
 
 declare module 'claude-code' {
   interface PluginState {
@@ -99,6 +115,8 @@ declare module 'claude-code' {
       guided: string | null
       live: string | null
       activity: Record<string, Activity> | null
+      // 비슷한 진행 중 업무가 있다고 한 번 되물은 새 work_id. 같은 id 로 다시 보내면 새 업무로 받는다.
+      asked: string[] | null
     }
   }
 }

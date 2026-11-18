@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LaterItem, LaterStatus } from '../types'
+import type { LaterItem, LaterStatus, Work } from '../types'
 
 import { readLater, readLive, readSessions, readWork, readWorks, writeLater, writeLive, writeWork } from './files'
 import { LATER_TOOL_DESCRIPTION, LATER_TOOL_NAME, LATER_TOOL_SCHEMA, laterFromArgs, newLater, openLater, readLaterInput } from './later'
@@ -10,6 +10,7 @@ import {
   TOOL_NAME,
   TOOL_SCHEMA,
   MAIN_LOOP,
+  closeOnAgentEnd,
   closingNote,
   describeCall,
   guideText,
@@ -23,7 +24,9 @@ import {
   toReport,
   unclosedChildren,
 } from './model'
+import { onlyRepo, repoOf, withRepos } from './repo'
 import { laterRow, reportRow } from './row'
+import { similarNote, similarOpenWorks } from './similar'
 import { SUMMARY_ARGS, dailySummary } from './summary'
 import { readOffsetMin } from './timezone'
 import { densityOf, drawPane, drawSummary } from './view'
@@ -34,6 +37,7 @@ const snapshot = atom({ plugin: 'work-progress-team', key: 'snapshot' } as const
 const guided = atom({ plugin: 'work-progress-team', key: 'guided' } as const, null)
 const published = atom({ plugin: 'work-progress-team', key: 'live' } as const, null)
 const notes = atom({ plugin: 'work-progress-team', key: 'activity' } as const, null)
+const asked = atom({ plugin: 'work-progress-team', key: 'asked' } as const, null)
 
 const PANE = 'work-progress'
 const PANE_TITLE = '업무 진행도'
@@ -56,6 +60,9 @@ function rowOf(tool: string, input: unknown): string | undefined {
 
 // 기한까지 남은 날을 셀 때 쓰는 이 컴퓨터의 UTC 차이(분). 다시 불러올 때도 session.start 가 다시 읽는다.
 let offsetMin = 0
+
+// 이 세션의 레포 경로. 패널은 이 레포 섹션을 맨 위에 두고, 세션 시작 안내는 이 레포의 업무만 싣는다.
+let repo: string | undefined
 
 // 다른 세션은 이 세션의 서브에이전트와 도구 사용을 볼 수 없으므로, 바뀔 때마다 파일로 알린다.
 async function publishLive($: EngineInterface): Promise<void> {
@@ -81,12 +88,12 @@ async function refresh($: EngineInterface): Promise<void> {
   await publishLive($).catch(() => undefined)
   const [works, sessions, live, later, now] = await Promise.all([
     readWorks($),
-    readSessions($),
+    readSessions($).then(sessions => withRepos($, sessions)),
     readLive($),
     readLater($),
     $.clock.now(),
   ])
-  const next = toBoard(works, sessions, now, live, offsetMin, later)
+  const next = { ...toBoard(works, sessions, now, live, offsetMin, later), ...(repo ? { repo } : {}) }
   await update($, board, prev => (prev && sameBoard(prev, next) && now - prev.at < CLOCK_STEP_MS ? prev : next))
 }
 
@@ -99,6 +106,18 @@ async function sessionName($: EngineInterface, id: string): Promise<string> {
 async function leftOpen($: EngineInterface, parentId: string): Promise<string[]> {
   const running = runningIds(await $.agent.list())
   return closingNote(unclosedChildren(await readWorks($), parentId, running))
+}
+
+// 새 업무를 처음 기록할 때 비슷한 진행 중 업무가 있으면 한 번만 되묻는다. 같은 work_id 로 다시 보내면 새 업무로 받는다.
+async function similarToAsk($: EngineInterface, work: Work): Promise<Work[]> {
+  const similar = similarOpenWorks(work.title, work.repo, await readWorks($))
+  if (similar.length === 0) return []
+  let isFirst = false
+  await update($, asked, prev => {
+    isFirst = !prev?.includes(work.id)
+    return isFirst ? [...(prev ?? []), work.id] : prev
+  })
+  return isFirst ? similar : []
 }
 
 async function archive($: EngineInterface, id: string): Promise<void> {
@@ -123,7 +142,7 @@ async function closeLater($: EngineInterface, id: string, status: Exclude<LaterS
 
 async function addLaterByUser($: EngineInterface, said: Pick<LaterItem, 'text' | 'topic'>): Promise<void> {
   const sessionId = await $.session.id()
-  const by = { sessionName: await sessionName($, sessionId), at: await $.clock.now() }
+  const by = { sessionName: await sessionName($, sessionId), repo, at: await $.clock.now() }
   await writeLater($, newLater(said.text, by, laterId(), said.topic ? { topic: said.topic } : {}))
   await refresh($)
 }
@@ -144,10 +163,14 @@ export const register: Register = on => {
         '모든 세션의 업무 진행도를 패널로 연다. /progress 요약 은 최근 24시간 업무를 글로 정리하고, /progress 나중 <할 일> 은 나중에 할 일을 남긴다',
     })
     offsetMin = await readOffsetMin($)
+    repo = await $.session
+      .cwd()
+      .then(cwd => repoOf($, cwd))
+      .catch(() => undefined)
     await refresh($)
     // hot reload 때도 session.start 가 다시 오지만 이미 만든 안내는 그대로 둔다.
     const current = await read($, board)
-    await update($, snapshot, prev => prev ?? guideText(current))
+    await update($, snapshot, prev => prev ?? guideText(onlyRepo(current)))
     $.clock.every(REFRESH_MS, () => void refresh($))
     return result
   })
@@ -160,9 +183,12 @@ export const register: Register = on => {
     const previous = id ? await readWork($, id.trim().toLowerCase()) : null
     const agentId = typeof input.agentId === 'string' ? input.agentId : undefined
     const parentId = agentId ? parentsBySession(await readWorks($)).get(sessionId)?.id : undefined
-    const by = { sessionId, sessionName: await sessionName($, sessionId), agentId, parentId, at }
+    const by = { sessionId, sessionName: await sessionName($, sessionId), repo, agentId, parentId, at }
     const report = toReport(input, previous, by)
     if ('error' in report) return { deny: report.error }
+    // 서브에이전트는 맡은 일만 새 work_id 로 기록하므로 견주지 않는다.
+    const similar = previous || agentId ? [] : await similarToAsk($, report.work)
+    if (similar.length > 0) return { deny: similarNote(similar, at) }
 
     await writeWork($, report.work)
     await refresh($)
@@ -179,7 +205,7 @@ export const register: Register = on => {
     const change = readLaterInput(input, {
       works: new Map(works.map(work => [work.id, work.title])),
       open: new Map(openLater(later).map(item => [item.id, item])),
-      by: { sessionName: name, at },
+      by: { sessionName: name, repo, at },
       newId: laterId,
     })
     if ('error' in change) return { deny: change.error }
@@ -187,6 +213,23 @@ export const register: Register = on => {
     await refresh($)
     return { result: change.notes.join('\n') }
   }).catch(() => ({ deny: '나중에 할 일을 저장하지 못했어요. 작업은 그대로 이어 가세요.' }))
+
+  // 서브에이전트가 자기 기록을 닫지 않고 끝나면 대신 닫는다. 실패해도 턴 끝은 그대로 흘려보낸다.
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+    const { agentId } = e
+    if (agentId === undefined) return result
+    try {
+      const at = await $.clock.now()
+      const closed = closeOnAgentEnd(await readWorks($), { agentId, reason: e.reason, answer: e.answer, at })
+      if (closed.length === 0) return result
+      await Promise.all(closed.map(work => writeWork($, work)))
+      await refresh($)
+    } catch {
+      // 기록을 못 닫아도 패널에 "닫지 않고 끝남"으로 남으니 그대로 둔다.
+    }
+    return result
+  })
 
   // 모든 도구 호출을 지켜보되 막지 않는다. 기록에 실패해도 도구는 그대로 돈다.
   on('tool.call', async ($, e, next) => {
@@ -206,7 +249,7 @@ export const register: Register = on => {
       return sessionId
     })
     if (!isFirst) return next(e)
-    const text = (await read($, snapshot)) ?? guideText(await read($, board))
+    const text = (await read($, snapshot)) ?? guideText(onlyRepo(await read($, board)))
     const result = await next({ ...e, context: [...(e.context ?? []), text] })
     // 프롬프트가 들어가지 못했으면 다음 프롬프트에 다시 붙인다.
     if (result.drop !== undefined) await update($, guided, prev => (prev === sessionId ? null : prev))
@@ -217,7 +260,7 @@ export const register: Register = on => {
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId !== undefined || e.trigger === 'precompute' || result.skip !== undefined) return result
-    const fresh = guideText(await read($, board))
+    const fresh = guideText(onlyRepo(await read($, board)))
     await update($, snapshot, () => fresh)
     await update($, guided, () => null)
     return result

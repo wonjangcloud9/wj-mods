@@ -31,6 +31,7 @@ export function toLater(value: unknown): LaterItem | null {
     workTitle: text(v.workTitle),
     status,
     sessionName: text(v.sessionName) ?? '',
+    repo: text(v.repo),
     createdAt: v.createdAt,
     updatedAt: typeof v.updatedAt === 'number' ? v.updatedAt : v.createdAt,
   }
@@ -75,7 +76,7 @@ export function laterFromArgs(args: string): { text: string; topic?: string } | 
   return topic && body ? { text: body.trim(), topic: topic.trim() } : { text: said }
 }
 
-export type LaterBy = { sessionName: string; at: number }
+export type LaterBy = { sessionName: string; repo?: string; at: number }
 
 export function newLater(
   said: string,
@@ -83,7 +84,8 @@ export function newLater(
   id: string,
   extra: Pick<LaterItem, 'topic' | 'due' | 'workId' | 'workTitle'> = {},
 ): LaterItem {
-  return { id, text: said, ...extra, status: 'open', sessionName: by.sessionName, createdAt: by.at, updatedAt: by.at }
+  const repo = by.repo ? { repo: by.repo } : {}
+  return { id, text: said, ...extra, status: 'open', sessionName: by.sessionName, ...repo, createdAt: by.at, updatedAt: by.at }
 }
 
 // works 는 업무 id 와 제목, open 은 아직 열린 나중에 할 일이다. newId 는 겹치지 않는 id 를 만든다.
@@ -136,14 +138,14 @@ export function readLaterInput(input: Record<string, unknown>, ctx: LaterContext
 }
 
 export const LATER_TOOL_DESCRIPTION =
-  '나중에 할 일을 남기거나 닫는다. 이번에는 하지 않고 다른 날이나 다른 브랜치에서 할 일을 사용자가 잊지 않게 진행도 패널에 남긴다.'
+  '나중에 할 일을 남기거나 닫는다. 사용자가 나중에 하자고 직접 말한 일만 진행도 패널에 남긴다. 답변에 적은 남는 위험, 다음에 할 일, 결정할 것, 배포 뒤 확인은 남기지 않는다.'
 
 export const LATER_TOOL_SCHEMA = {
   type: 'object',
   properties: {
     add: {
       type: 'array',
-      description: '새로 남길 나중에 할 일',
+      description: '새로 남길 나중에 할 일. 사용자가 나중에 하자고 직접 말한 일만 넣는다.',
       items: {
         type: 'object',
         properties: {
