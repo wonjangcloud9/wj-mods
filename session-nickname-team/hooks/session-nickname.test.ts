@@ -55,10 +55,18 @@ const START = { cwd: '/Users/me/my-project', surface: 'terminal', isInteractive:
 const turn = (turnId: string, agentId?: string) => ({ text: 'hi', turnId, ...(agentId ? { agentId } : {}) })
 
 describe('names', () => {
-  test('최근에 쓴 이름은 건너뛴다', () => {
+  test('최근 이름에 쓴 형용사와 명사는 다시 쓰지 않는다', () => {
     const first = pickName([], () => 0)
     expect(first).toBe('sleepy-otter')
-    expect(pickName([first], () => 0)).toBe('sleepy-panda')
+    expect(pickName([first], () => 0)).toBe('grumpy-panda')
+  })
+
+  test('최근 이름 여러 개에 나온 단어가 새 이름에 섞이지 않는다', () => {
+    let recent: string[] = []
+    for (let i = 0; i < 24; i++) recent = remember(recent, pickName(recent))
+    const words = recent.flatMap(name => name.split('-'))
+    expect(new Set(words).size).toBe(words.length)
+    expect(recent.every(name => NAME.test(name))).toBe(true)
   })
 
   test('최근 이름은 새것부터 정해진 개수만 남긴다', () => {
